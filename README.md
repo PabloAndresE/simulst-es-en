@@ -73,7 +73,11 @@ script and expects a manual Common Voice download; this one does not.
   reports the native rate so the mismatch is visible.
 - **HTTP streaming stalls.** Shards are 82 MB; on a 2.1 MB/s link `load_dataset(streaming=True)`
   hangs for over ten minutes without yielding a row. `scripts/download_data.py`
-  materialises the 4.53 GB once (~36 minutes at that speed).
+  materialises the 4.53 GB once (~36 minutes at that speed, 133 s on a datacentre link).
+- **Two of the 79,015 training rows carry zero audio bytes**, both in
+  `train-00005-of-00016`. The loader skips undecodable rows and prints the count rather
+  than killing a multi-hour job; `on_corrupt="raise"` fails loudly instead. All 79,013
+  remaining rows are valid MP3.
 
 ### A constraint that shapes phase 2
 

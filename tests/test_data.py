@@ -35,3 +35,31 @@ def test_empty_split_is_an_error(parquet_shards):
 def test_total_hours(parquet_shards):
     dataset = CoVoST2Dataset(parquet_shards, "train")
     assert abs(dataset.total_hours - 6 * 2 / 3600) < 1e-6
+
+
+class TestCorruptRows:
+    """Two of 79,015 CoVoST 2 training rows carry zero audio bytes."""
+
+    def test_corrupt_rows_are_skipped_by_default(self, shards_with_corrupt_row):
+        examples = list(iter_examples(shards_with_corrupt_row, "train"))
+        assert len(examples) == 4  # 6 rows, 2 unusable
+
+    def test_surviving_rows_keep_their_text(self, shards_with_corrupt_row):
+        examples = list(iter_examples(shards_with_corrupt_row, "train"))
+        assert [e.translation for e in examples] == [
+            "sentence 0", "sentence 1", "sentence 3", "sentence 5"
+        ]
+
+    def test_raise_mode_fails_loudly(self, shards_with_corrupt_row):
+        with pytest.raises(RuntimeError, match="row 2"):
+            list(iter_examples(shards_with_corrupt_row, "train", on_corrupt="raise"))
+
+    def test_unknown_policy_is_rejected(self, shards_with_corrupt_row):
+        with pytest.raises(ValueError, match="on_corrupt must be"):
+            list(iter_examples(shards_with_corrupt_row, "train", on_corrupt="ignore"))
+
+    def test_limit_counts_usable_rows_only(self, shards_with_corrupt_row):
+        assert len(list(iter_examples(shards_with_corrupt_row, "train", limit=3))) == 3
+
+    def test_dataset_builds_despite_corrupt_rows(self, shards_with_corrupt_row):
+        assert len(CoVoST2Dataset(shards_with_corrupt_row, "train")) == 4

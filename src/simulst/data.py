@@ -15,7 +15,7 @@ import numpy as np
 import pyarrow.parquet as pq
 import torch
 
-from simulst.audio import decode, load
+from simulst.audio import load
 
 COLUMNS = ("audio", "sentence", "translation")
 
@@ -46,16 +46,35 @@ def iter_examples(
     split: str,
     target_rate: int = 16000,
     limit: int | None = None,
+    on_corrupt: str = "skip",
 ) -> Iterator[Example]:
-    """Stream decoded examples from the cached parquet shards."""
-    emitted = 0
+    """Stream decoded examples from the cached parquet shards.
+
+    Two of the 79,015 training rows carry zero audio bytes, both in
+    ``train-00005-of-00016``. That is an upstream defect, and crashing a
+    multi-hour job on it is the wrong trade: ``on_corrupt="skip"`` drops them and
+    reports the count at the end, so the loss is visible rather than silent.
+    Pass ``on_corrupt="raise"`` to fail loudly instead.
+    """
+    if on_corrupt not in ("skip", "raise"):
+        raise ValueError(f"on_corrupt must be 'skip' or 'raise', got {on_corrupt!r}")
+
+    emitted = corrupt = 0
     for path in shard_paths(root, split):
         table = pq.read_table(path, columns=list(COLUMNS))
-        for row in table.to_pylist():
+        for index, row in enumerate(table.to_pylist()):
             blob = row["audio"]
             raw = blob["bytes"] if isinstance(blob, dict) else blob
-            _, native_rate = decode(raw)
-            audio = load(raw, target_rate)
+            try:
+                if not raw:
+                    raise ValueError("empty audio payload")
+                audio = load(raw, target_rate)
+            except Exception as exc:  # noqa: BLE001 - any decode failure is the same decision
+                if on_corrupt == "raise":
+                    raise RuntimeError(f"{path.name} row {index}: {exc}") from exc
+                corrupt += 1
+                continue
+
             yield Example(
                 audio=audio,
                 sentence=row["sentence"],
@@ -64,8 +83,12 @@ def iter_examples(
             )
             emitted += 1
             if limit is not None and emitted >= limit:
-                return
-            del native_rate
+                break
+        if limit is not None and emitted >= limit:
+            break
+
+    if corrupt:
+        print(f"[data] skipped {corrupt} undecodable rows in split {split!r}")
 
 
 class CoVoST2Dataset(torch.utils.data.Dataset):
@@ -82,10 +105,11 @@ class CoVoST2Dataset(torch.utils.data.Dataset):
         target_rate: int = 16000,
         limit: int | None = None,
         max_duration_s: float = 30.0,
+        on_corrupt: str = "skip",
     ):
         self.examples = [
             ex
-            for ex in iter_examples(root, split, target_rate, limit)
+            for ex in iter_examples(root, split, target_rate, limit, on_corrupt)
             if ex.duration_s <= max_duration_s
         ]
         if not self.examples:
