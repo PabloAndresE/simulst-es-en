@@ -7,6 +7,9 @@
 #SBATCH --mem=64G
 #SBATCH --time=12:00:00
 #
+# NOTE: only for clusters that actually run SLURM. The USFQ DGX does not have
+# sbatch; use scripts/run_training.sh there.
+#
 # Partition and account are cluster-specific; add them here or on the command
 # line: sbatch -p gpu -A myaccount scripts/slurm/train.sbatch
 set -euo pipefail

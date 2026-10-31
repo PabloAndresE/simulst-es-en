@@ -106,8 +106,17 @@ make eval-zero    # the zero-shot baseline
 make train
 ```
 
-On a GPU server: `CUDA_TAG=cu124 bash scripts/setup_server.sh`, then
-`sbatch scripts/slurm/train.sbatch`.
+On a GPU server:
+
+```bash
+CUDA_TAG=cu124 bash scripts/setup_server.sh
+GPU=1 bash scripts/run_training.sh        # no scheduler
+sbatch scripts/slurm/train.sbatch         # only where SLURM exists
+```
+
+On a shared box, pick the GPU by **free memory, not index**: a card can sit at 0%
+utilisation with its memory already held by someone else's idle process.
+`run_training.sh` does that automatically when `GPU` is unset.
 
 `scripts/preflight.py` is the gate: it verifies the cached shards, reports the native
 sample rate, confirms the weights load **offline** (compute nodes are often firewalled),
