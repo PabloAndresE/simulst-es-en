@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # CPU torch and no model downloads: the tests cover resampling, data
+      # handling and metrics, none of which need weights.
+      - run: |
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+            torch numpy soundfile pyarrow pyyaml sacrebleu
+          pip install pytest ruff
+          pip install --no-deps -e .
+
+      - run: ruff check src tests scripts
+      - run: pytest -q

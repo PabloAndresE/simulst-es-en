@@ -1,0 +1,17 @@
+# Minutes, not hours: proves the pipeline end to end before a real run.
+data:
+  cache_dir: data
+  batch_size: 4
+  num_workers: 2
+  max_train_examples: 64
+  max_eval_examples: 32
+model:
+  name: openai/whisper-tiny
+  language: spanish
+  task: translate
+train:
+  epochs: 1
+  lr: 1.0e-5
+  warmup_steps: 2
+  amp: true
+  out_dir: runs/smoke

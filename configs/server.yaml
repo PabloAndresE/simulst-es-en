@@ -1,0 +1,34 @@
+# H200 / A100 configuration for phase 1: the offline baseline.
+#
+# Whisper already does X->English translation, so the zero-shot model is the
+# number to beat. Record it with `evaluate.py` (no --checkpoint) before training.
+data:
+  dataset: fixie-ai/covost2
+  config_name: es_en
+  cache_dir: data
+  # The dataset card says 16 kHz; the files are 48 kHz. Resampling is mandatory.
+  target_sample_rate: 16000
+  max_duration_s: 30.0
+  max_label_tokens: 160
+  batch_size: 16
+  num_workers: 8
+  seed: 42
+  max_train_examples: null     # all 79,015
+  max_eval_examples: 1000      # BLEU on 1k is stable enough for epoch selection
+
+model:
+  name: openai/whisper-small
+  language: spanish
+  task: translate
+  freeze_encoder: false
+  dropout: 0.0
+
+train:
+  epochs: 3
+  lr: 1.0e-5
+  warmup_steps: 500
+  weight_decay: 0.01
+  grad_accum: 1
+  max_grad_norm: 1.0
+  amp: true
+  out_dir: runs/whisper-small-ft
