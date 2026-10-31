@@ -57,6 +57,14 @@ def param_counts(model) -> dict[str, int]:
 
 @torch.no_grad()
 def translate(model, processor, input_features: torch.Tensor, num_beams: int = 1):
-    """Greedy decode a batch of Whisper features into English text."""
+    """Greedy decode a batch of Whisper features into English text.
+
+    ``clean_up_tokenization_spaces=False`` is deliberate: the clean-up step is
+    built for WordPiece and strips spaces before punctuation on a BPE tokenizer
+    like Whisper's, which silently alters the hypothesis and therefore the BLEU
+    it is scored with.
+    """
     generated = model.generate(input_features.to(model.device), num_beams=num_beams)
-    return processor.batch_decode(generated, skip_special_tokens=True)
+    return processor.batch_decode(
+        generated, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
