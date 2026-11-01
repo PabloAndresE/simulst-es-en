@@ -211,7 +211,11 @@ class SimultaneousTranslator:
 
             self.state.token_ids.append(token)
             emission = Emission(
-                text=self.processor.tokenizer.decode([token], skip_special_tokens=False),
+                # Same reason as elsewhere: the BPE clean-up strips spaces before
+                # punctuation, and this string is what the viewer actually reads.
+                text=self.processor.tokenizer.decode(
+                    [token], skip_special_tokens=False, clean_up_tokenization_spaces=False
+                ),
                 time_s=self.elapsed_s,
                 frame=frame,
             )
