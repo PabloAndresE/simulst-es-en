@@ -13,14 +13,20 @@ import torch
 from simulst.config import ModelConfig
 
 
-def build(cfg: ModelConfig, device: str = "cpu"):
+def build(cfg: ModelConfig, device: str = "cpu", attn_implementation: str | None = None):
     """Return ``(model, processor)`` configured for es->en translation."""
     from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
     processor = WhisperProcessor.from_pretrained(
         cfg.name, language=cfg.language, task=cfg.task
     )
-    model = WhisperForConditionalGeneration.from_pretrained(cfg.name)
+    # PyTorch's fused SDPA kernel never materialises an attention matrix, so a
+    # model loaded with it returns an EMPTY cross_attentions tuple when asked for
+    # output_attentions=True -- with a warning, not an error. Anything reading
+    # attention (the AlignAtt policy here) must ask for "eager".
+    model = WhisperForConditionalGeneration.from_pretrained(
+        cfg.name, attn_implementation=attn_implementation
+    )
 
     # Without this the model falls back to transcription and "translates"
     # Spanish audio into Spanish text, which scores a plausible-looking but
@@ -30,7 +36,10 @@ def build(cfg: ModelConfig, device: str = "cpu"):
     model.generation_config.language = cfg.language
     model.generation_config.task = cfg.task
     model.config.forced_decoder_ids = None
-    model.config.suppress_tokens = []
+    # Whisper's pretrained suppress_tokens list exists to stop it emitting
+    # non-speech markers like "[Music]" on silence. Many fine-tuning recipes
+    # clear it; under a commit-forever streaming policy that is fatal, because a
+    # hallucinated marker in the first half-second can never be taken back.
     # Whisper's own 448-token limit is the right cap; passing max_new_tokens as
     # well makes transformers warn on every generate() call, so generation
     # length is controlled here once instead of at each call site.
