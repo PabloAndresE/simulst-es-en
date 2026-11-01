@@ -4,7 +4,48 @@ Building a live speech translator from a base model: fine-tune an offline speech
 translation model, then **implement the simultaneous policy from the paper** so it emits
 English while the Spanish is still being spoken.
 
-**Status: phase 1 (offline baseline). Nothing below is a final result yet.**
+**Status: phase 1 complete. Phase 2 (the simultaneous policy) is not implemented yet.**
+
+### What phase 1 measured
+
+Fine-tuning `whisper-small` on CoVoST 2 es→en (113 h), against the zero-shot model that
+already performs the task. BLEU on 1,000 validation utterances, greedy decoding, one H200:
+
+| Configuration | Trainable params | BLEU | GPU time |
+|---|---|---|---|
+| `whisper-small` zero-shot | — | 33.61 | — |
+| Full fine-tune, 3 epochs | 241.7M (100%) | 35.82 | 33 min |
+| **Full fine-tune, 1 epoch** | 241.7M (100%) | **36.13** | 12.8 min |
+| Frozen encoder, 1 epoch | 153.6M (63.5%) | 35.30 | 7.9 min |
+
+**One epoch beats three, at a third of the cost.** Not because later epochs are harmful in
+themselves: `OneCycleLR` spreads its decay over the configured total, so the three-epoch
+run was still at a high learning rate when it passed the one-epoch mark. The honest
+statement is *one epoch with a completed schedule beats three*, and the three-epoch run
+then overfits — train loss 1.01 → 0.37 while BLEU falls 35.82 → 34.76.
+
+**Fine-tuning dips below the model it started from.** Evaluating four times inside the
+first epoch shows the trajectory a per-epoch schedule hides:
+
+| Progress | Full fine-tune | Frozen encoder |
+|---|---|---|
+| 25% | **32.59** (below zero-shot) | 34.15 |
+| 50% | 33.63 | 34.17 |
+| 75% | 35.85 | 35.28 |
+| 100% | **36.13** | 35.30 |
+
+A quarter of the way through, full fine-tuning is *worse than not training at all*, and it
+only passes the baseline after the halfway point.
+
+**The dip comes from disturbing the encoder.** With the encoder frozen it never happens:
+the frozen arm is above zero-shot at every measured point. Freezing costs 0.83 BLEU and
+saves 40% of the wall clock, and buys monotone progress. That is a trade-off worth
+knowing, and it is not visible from a final number.
+
+A caveat on the table: zero-shot validation *loss* is not comparable with the fine-tuned
+figures, because the base model writes different punctuation and casing and teacher
+forcing penalises that regardless of translation quality. BLEU is the only column that
+compares across the two.
 
 ## The question
 
@@ -29,17 +70,12 @@ Whisper ships an X→English translation task, so `openai/whisper-small` with
 `task="translate"` **already performs this job**. That makes the zero-shot model a real
 baseline to beat rather than an arbitrary initialisation.
 
-Measured locally on 32 validation clips, greedy decoding:
+The baseline is recorded *before* any weights move, by the runner itself, so the
+comparison cannot be reconstructed after the fact. On 1,000 validation utterances with
+greedy decoding, `whisper-small` zero-shot scores **BLEU 33.61**.
 
-| Model | BLEU |
-|---|---|
-| `whisper-small`, zero-shot | **23.99** |
-| `whisper-tiny`, zero-shot | 10.69 |
-
-Small sample, so treat these as sanity checks rather than results. Any fine-tune is
-reported against the zero-shot number on the same split, and `scripts/slurm/train.sbatch`
-records the baseline *before* training starts so the comparison cannot be reconstructed
-after the fact.
+(A 32-clip probe on a laptop had given 23.99 for the same model. Small samples of BLEU
+move by ten points; the 1,000-utterance figure is the one to quote.)
 
 Sample output (zero-shot `whisper-small`):
 
@@ -61,7 +97,7 @@ script and expects a manual Common Voice download; this one does not.
 
 | Split | Examples |
 |---|---|
-| train | 79,015 (~138 h) |
+| train | 79,015 (113.1 h of audio) |
 | validation | 13,221 |
 | test | 13,221 |
 
@@ -81,7 +117,8 @@ script and expects a manual Common Voice download; this one does not.
 
 ### A constraint that shapes phase 2
 
-Measured over 300 clips: **mean 6.26 s, p90 8.74 s, max 12.4 s.**
+Measured over the full training split: **113.1 h across 79,013 usable clips, mean 5.15 s**
+(a 300-clip probe had suggested 6.26 s — a reminder to measure the corpus, not a sample).
 
 Simultaneous translation only has room to differ from offline translation on *long*
 utterances — in six seconds there is little space between "wait for the end" and "emit as
@@ -150,9 +187,16 @@ tests/          20 tests: resampling, data, metrics
 
 ## Limitations
 
-- Phase 1 only. No simultaneous policy is implemented yet; the latency metrics exist and
-  are tested, but nothing produces emissions to feed them.
-- The BLEU numbers above are from 24-32 clips on a laptop, not an evaluation.
+- No simultaneous policy is implemented yet; the latency metrics exist and are tested,
+  but nothing produces emissions to feed them. That is phase 2.
+- **Single seed.** The +2.52 BLEU gain has no variance estimate; nothing here is a
+  significance claim.
+- **The one-epoch and three-epoch runs do not share a learning-rate schedule**, since
+  `OneCycleLR` is defined over total steps. They are not a clean epoch-count ablation.
+- **The peak may lie past one epoch** with a schedule built for it; only 1 and 3 epochs
+  were measured.
+- Validation is 1,000 of 13,221 utterances, to keep per-epoch evaluation affordable.
+- The test split has not been read.
 - Resampling is linear interpolation, not a windowed-sinc filter. Adequate for 48→16 kHz
   of speech; a polyphase resampler would be more faithful.
 - CoVoST 2 is read speech from Common Voice. Spontaneous speech and Ecuadorian Spanish
