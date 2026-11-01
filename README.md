@@ -1,12 +1,76 @@
 # Simultaneous Speech Translation, Spanish → English
 
-Building a live speech translator from a base model: fine-tune an offline speech
-translation model, then **implement the simultaneous policy from the paper** so it emits
-English while the Spanish is still being spoken.
+English appears while the Spanish is still being spoken, and nothing on screen is ever
+rewritten.
 
-**Status: phase 1 complete. Phase 2 (the simultaneous policy) is not implemented yet.**
+![The policy translating a 10.4 s utterance](docs/assets/demo.gif)
 
-### What phase 1 measured
+```bash
+python -m simulst.live --mic                                 # talk to it
+python -m simulst.live --file clip.wav --compare             # replay a recording
+```
+
+## What the hard part actually is
+
+A simultaneous system is not a different model, it is a different *decision*: given half
+an utterance, emit now and risk being wrong, or wait and accumulate lag. That decision is
+inference-time logic, and this repository implements it rather than calling a library that
+hides it.
+
+The policy is **AlignAtt** (Papi et al., 2023). Generate greedily on the audio received so
+far; for each candidate token, read which encoder frame its cross-attention points at. A
+token leaning on the last `f` frames depends on sound that is still arriving, so it is
+withheld. Everything else is committed permanently — which is why the measured revision
+rate is **0.000 at every operating point**, and why the cost shows up as latency instead
+of as text flickering in front of the reader.
+
+## The result: a curve, not a score
+
+`whisper-small`, 40 held-out utterances, 0.5 s chunks, one M1 Pro. `f` is the dial:
+
+| Policy | BLEU | % of offline | Average Lagging | Revisions |
+|---|---|---|---|---|
+| Offline (wait for everything) | 25.90 | 100% | 6.59 s | 0.000 |
+| AlignAtt `f=8` | 8.25 | 32% | **0.48 s** | 0.000 |
+| AlignAtt `f=16` | 11.50 | 44% | 0.52 s | 0.000 |
+| AlignAtt `f=32` | 13.88 | 54% | 1.09 s | 0.000 |
+| AlignAtt `f=64` | 19.96 | 77% | 1.75 s | 0.000 |
+| **AlignAtt `f=100`** | **24.04** | **93%** | **2.58 s** | 0.000 |
+
+**At two seconds of margin the policy keeps 93% of offline quality while cutting delay by
+2.6×.** At aggressive settings it collapses: `f=8` answers in half a second and throws
+away two thirds of the quality. The curve is the deliverable; any single number on it is a
+choice about what the application can tolerate.
+
+A caveat worth stating plainly: the conventional wisdom is *do not stream Whisper*, and the
+aggressive end of this curve is exactly why. Whisper never saw a truncated utterance in
+training, so decoding an audio prefix is out of distribution. The point of measuring is
+that the degradation is not uniform — it is a dial, and the top of the dial is usable.
+
+These numbers use the **base** `whisper-small`, not the fine-tuned checkpoint, so the
+streaming curve and the fine-tuning table below are separate experiments.
+
+## Two defects that produce plausible, wrong output
+
+Both were mine, both were found only by running the thing on real audio.
+
+**PyTorch's fused attention kernel silently returns no attention.** A model loaded with the
+default `sdpa` implementation and asked for `output_attentions=True` yields an *empty*
+`cross_attentions` tuple, and the warning goes to stderr where a training log buries it.
+An attention-based policy gets nothing to read. `build()` takes `attn_implementation` and
+`attended_frame` raises a named error instead of failing twenty lines later.
+
+**Clearing `suppress_tokens` lets Whisper hallucinate `[Music]` into the first half
+second.** Fine-tuning recipes clear that list routinely and it is harmless offline. Under a
+commit-forever policy it is fatal: the marker is emitted at 0.5 s and can never be taken
+back, poisoning the rest of the utterance. The pretrained suppression list is kept, and
+since decoding by hand bypasses `generate()`, the policy applies the list itself — a
+hand-written decode loop runs none of the logits processors you may believe are protecting
+you.
+
+## The model underneath
+
+### Fine-tuning `whisper-small`
 
 Fine-tuning `whisper-small` on CoVoST 2 es→en (113 h), against the zero-shot model that
 already performs the task. BLEU on 1,000 validation utterances, greedy decoding, one H200:
@@ -53,16 +117,6 @@ A simultaneous system is not a different model, it is a different *decision*: gi
 an utterance, do you emit now and risk being wrong, or wait and accumulate lag? That
 decision — the emission policy — is where the research sits, and it is inference-time
 logic you write yourself.
-
-This repository builds that in three phases:
-
-| Phase | What it produces | What it demonstrates |
-|---|---|---|
-| **1. Offline baseline** | A fine-tuned ES→EN speech translation model | Training speech models, not just calling them |
-| **2. Simultaneous policy** | AlignAtt-style decoding implemented from the paper | Reading research and implementing it correctly |
-| **3. Monotonic attention** | A model trained to be natively simultaneous | Understanding the mechanism, not the recipe |
-
-Phases 1 and 2 are the target; phase 3 is a stretch.
 
 ## Why Whisper is the starting point, and the baseline
 
@@ -141,10 +195,16 @@ CoVoST utterances) for the quality-latency curves.
 ```bash
 pip install -e ".[dev]"
 python scripts/download_data.py --out data     # 4.53 GB
+
+# the demo, no training required
+python -m simulst.live --file docs/assets/sample_es.wav --compare
+
+# reproduce the curve
+python -m simulst.stream_eval --thresholds 8 16 32 64 100 --limit 40
+
+# the model underneath
 python scripts/preflight.py --config configs/server.yaml
-make smoke        # whisper-tiny, 64 examples, minutes
-make eval-zero    # the zero-shot baseline
-make train
+make smoke && make eval-zero && make train
 ```
 
 On a GPU server:
@@ -173,19 +233,29 @@ read test once, when the model is frozen.
 
 ```
 src/simulst/
-  config.py     dataclass config loaded from YAML
-  audio.py      decoding and 48 kHz -> 16 kHz resampling
-  data.py       parquet shards, dataset, Whisper collator
-  model.py      Whisper configured for es->en translation
-  metrics.py    BLEU, Average Lagging, revision rate
-  train.py      fine-tuning CLI
-  evaluate.py   scoring CLI, gated test split
-scripts/        data download, preflight, server setup, SLURM
-configs/        server and smoke configurations
-tests/          20 tests: resampling, data, metrics
+  simultaneous.py  the AlignAtt policy and the streaming translator
+  stream_eval.py   the quality-latency sweep
+  live.py          microphone and file demos
+  metrics.py       BLEU, Average Lagging, revision rate
+  model.py         Whisper configured for es->en translation
+  data.py          parquet shards, dataset, Whisper collator
+  audio.py         decoding and 48 kHz -> 16 kHz resampling
+  train.py         fine-tuning CLI
+  evaluate.py      scoring CLI, gated test split
+  config.py        dataclass config loaded from YAML
+scripts/           download, preflight, server setup, demo GIF
+results/           raw metrics from every run in this README
+tests/             43 tests, no weights required
 ```
 
 ## Limitations
+
+- **The streaming curve is 40 utterances on one seed.** Enough to establish the shape,
+  not enough for a significance claim about any single point.
+- **CoVoST 2 clips average 5.15 s.** Simultaneous translation has the least to prove on
+  short utterances; the curve would look different on long-form speech, which is the
+  honest next measurement (Europarl-ST, MuST-C).
+- **The streaming evaluation uses the base model**, not the fine-tuned checkpoint.
 
 - No simultaneous policy is implemented yet; the latency metrics exist and are tested,
   but nothing produces emissions to feed them. That is phase 2.
@@ -204,10 +274,10 @@ tests/          20 tests: resampling, data, metrics
 
 ## Reference
 
+- Papi et al., *AlignAtt: Using Attention-based Audio-Translation Alignments as a Guide
+  for Simultaneous Speech Translation* (2023) — the policy implemented here
 - Ma et al., *STACL: Simultaneous Translation with Implicit Anticipation and Controllable
   Latency* (2019) — Average Lagging
-- Papi et al., *AlignAtt: Using Attention-based Audio-Translation Alignments as a Guide
-  for Simultaneous Speech Translation* (2023)
 - Wang et al., *CoVoST 2* (2020)
 - Radford et al., *Robust Speech Recognition via Large-Scale Weak Supervision* (2022)
 

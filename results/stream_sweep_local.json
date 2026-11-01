@@ -1,0 +1,68 @@
+{
+  "model": "openai/whisper-small",
+  "rows": [
+    {
+      "policy": "offline",
+      "bleu": 25.89507465773387,
+      "average_lagging_s": 6.5904,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 17.374637126922607
+    },
+    {
+      "frame_threshold": 8,
+      "chunk_s": 0.5,
+      "min_audio_s": 1.0,
+      "bleu": 8.24726620166337,
+      "average_lagging_s": 0.4814438649944619,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 142.9978551864624,
+      "policy": "alignatt"
+    },
+    {
+      "frame_threshold": 16,
+      "chunk_s": 0.5,
+      "min_audio_s": 1.0,
+      "bleu": 11.500055179492142,
+      "average_lagging_s": 0.5177849363708187,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 145.5124740600586,
+      "policy": "alignatt"
+    },
+    {
+      "frame_threshold": 32,
+      "chunk_s": 0.5,
+      "min_audio_s": 1.0,
+      "bleu": 13.881139479914767,
+      "average_lagging_s": 1.090121207856471,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 143.59988927841187,
+      "policy": "alignatt"
+    },
+    {
+      "frame_threshold": 64,
+      "chunk_s": 0.5,
+      "min_audio_s": 1.0,
+      "bleu": 19.963609823580764,
+      "average_lagging_s": 1.7462282840796113,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 141.95938920974731,
+      "policy": "alignatt"
+    },
+    {
+      "frame_threshold": 100,
+      "chunk_s": 0.5,
+      "min_audio_s": 1.0,
+      "bleu": 24.04029774532798,
+      "average_lagging_s": 2.5834003635925242,
+      "revision_rate": 0.0,
+      "clips": 40,
+      "seconds": 146.26380491256714,
+      "policy": "alignatt"
+    }
+  ]
+}
