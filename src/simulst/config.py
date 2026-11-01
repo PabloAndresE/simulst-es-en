@@ -49,7 +49,10 @@ class TrainConfig:
     grad_accum: int = 1
     max_grad_norm: float = 1.0
     amp: bool = True
-    eval_every: int = 1
+    #: Evaluations per epoch. The first run peaked at epoch 1 and declined after,
+    #: so the real maximum sits somewhere inside epoch 1 and a once-per-epoch
+    #: schedule cannot see it.
+    evals_per_epoch: int = 1
     out_dir: str = "runs/baseline"
 
 

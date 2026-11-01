@@ -1,0 +1,21 @@
+# Where is the real peak?
+#
+# The first run evaluated once per epoch and scored 35.82, 35.10, 34.76: the
+# best model was already behind it by the time the first number appeared. One
+# epoch with four evaluations locates the maximum instead of bracketing it.
+data:
+  cache_dir: data
+  batch_size: 16
+  num_workers: 8
+  max_eval_examples: 1000
+model:
+  name: openai/whisper-small
+  language: spanish
+  task: translate
+train:
+  epochs: 1
+  lr: 1.0e-5
+  warmup_steps: 500
+  evals_per_epoch: 4
+  amp: true
+  out_dir: runs/dense-eval

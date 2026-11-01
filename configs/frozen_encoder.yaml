@@ -1,0 +1,23 @@
+# Does the encoder need to move at all?
+#
+# Full fine-tuning overfits: train loss fell 1.01 -> 0.37 across three epochs
+# while BLEU fell 35.82 -> 34.76. Freezing the encoder trains the decoder only,
+# roughly a third of the parameters, and should overfit far less. Matching BLEU
+# at a fraction of the compute is a result; losing badly is also a result.
+data:
+  cache_dir: data
+  batch_size: 16
+  num_workers: 8
+  max_eval_examples: 1000
+model:
+  name: openai/whisper-small
+  language: spanish
+  task: translate
+  freeze_encoder: true
+train:
+  epochs: 1
+  lr: 1.0e-5
+  warmup_steps: 500
+  evals_per_epoch: 4
+  amp: true
+  out_dir: runs/frozen-encoder

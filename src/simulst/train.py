@@ -90,6 +90,31 @@ def run(cfg: Config, device: str, quiet: bool = False) -> dict:
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     history, best_bleu = [], -1.0
+    batches = len(loaders["train"])
+    eval_interval = max(1, batches // max(cfg.train.evals_per_epoch, 1))
+
+    def checkpoint(epoch: int, fraction: float, train_loss: float, started: float) -> None:
+        nonlocal best_bleu
+        metrics = evaluate(model, processor, loaders["validation"], device)
+        metrics.update(
+            epoch=epoch,
+            progress=round(fraction, 3),
+            train_loss=train_loss,
+            seconds=time.time() - started,
+        )
+        history.append(metrics)
+        if not quiet:
+            print(
+                f"epoch {epoch} @{fraction:.2f} | train {train_loss:.4f} "
+                f"| val {metrics['loss']:.4f} | BLEU {metrics['bleu']:.2f} "
+                f"| {metrics['seconds'] / 60:.1f} min"
+            )
+        if metrics["bleu"] > best_bleu:
+            best_bleu = metrics["bleu"]
+            model.save_pretrained(out_dir / "best")
+            processor.save_pretrained(out_dir / "best")
+        model.train()
+
     for epoch in range(1, cfg.train.epochs + 1):
         model.train()
         running, started = 0.0, time.time()
@@ -113,24 +138,12 @@ def run(cfg: Config, device: str, quiet: bool = False) -> dict:
 
             running += loss.item() * cfg.train.grad_accum
             if not quiet and step % 100 == 0:
-                total = len(loaders["train"])
-                print(f"  epoch {epoch} step {step}/{total} loss {running / step:.4f}")
+                print(f"  epoch {epoch} step {step}/{batches} loss {running / step:.4f}")
 
-        metrics = evaluate(model, processor, loaders["validation"], device)
-        metrics.update(epoch=epoch, train_loss=running / len(loaders["train"]),
-                       seconds=time.time() - started)
-        history.append(metrics)
-        if not quiet:
-            print(
-                f"epoch {epoch}/{cfg.train.epochs} | train {metrics['train_loss']:.4f} "
-                f"| val {metrics['loss']:.4f} | BLEU {metrics['bleu']:.2f} "
-                f"| {metrics['seconds'] / 60:.1f} min"
-            )
+            if step % eval_interval == 0 and step < batches:
+                checkpoint(epoch, epoch - 1 + step / batches, running / step, started)
 
-        if metrics["bleu"] > best_bleu:
-            best_bleu = metrics["bleu"]
-            model.save_pretrained(out_dir / "best")
-            processor.save_pretrained(out_dir / "best")
+        checkpoint(epoch, float(epoch), running / batches, started)
 
     (out_dir / "history.json").write_text(
         json.dumps({"best_bleu": best_bleu, "history": history}, indent=2)
