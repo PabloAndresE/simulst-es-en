@@ -11,6 +11,7 @@ import torch
 
 from simulst.simultaneous import (
     FRAMES_PER_SECOND,
+    REPLACEMENT,
     AlignAttConfig,
     SimultaneousTranslator,
     alignment_heads,
@@ -207,3 +208,53 @@ class TestRunStream:
         )
         times = [e.time_s for e in emissions]
         assert times == sorted(times)
+
+
+class TestMultibyteCharacters:
+    """Byte-level BPE splits characters; the viewer must never see the pieces."""
+
+    class SplitTokenizer(StubTokenizer):
+        """Token 20 is half of a character, completed by token 21."""
+
+        def decode(self, ids, skip_special_tokens=True, clean_up_tokenization_spaces=False):
+            body = [i for i in ids if i not in (10, 11, 12, 13)]
+            if body == [20]:
+                return "don" + REPLACEMENT
+            if body == [20, 21]:
+                return "don\u2019t"
+            return "".join(f"t{i}" for i in body)
+
+    def processor(self):
+        processor = StubProcessor()
+        processor.tokenizer = self.SplitTokenizer()
+        return processor
+
+    def test_an_incomplete_character_is_not_shown(self):
+        translator = SimultaneousTranslator(
+            StubModel([5]), self.processor(), AlignAttConfig(frame_threshold=2)
+        )
+        assert translator.push(silence(1.0)) == []
+
+    def test_the_character_appears_whole_once_it_resolves(self):
+        translator = SimultaneousTranslator(
+            StubModel([5, 6]), self.processor(), AlignAttConfig(frame_threshold=2)
+        )
+        emitted = translator.push(silence(1.0))
+        assert "".join(e.text for e in emitted) == "don\u2019t"
+
+    def test_no_emission_ever_contains_the_replacement_glyph(self):
+        translator = SimultaneousTranslator(
+            StubModel([5, 6]), self.processor(), AlignAttConfig(frame_threshold=2)
+        )
+        translator.push(silence(1.0))
+        translator.finish()
+        assert all(REPLACEMENT not in e.text for e in translator.state.emissions)
+
+    def test_concatenated_emissions_equal_the_committed_text(self):
+        """The display and the committed text must not drift apart."""
+        translator = SimultaneousTranslator(
+            StubModel([5, 6]), self.processor(), AlignAttConfig(frame_threshold=2)
+        )
+        translator.push(silence(1.0))
+        joined = "".join(e.text for e in translator.state.emissions)
+        assert joined == translator.text

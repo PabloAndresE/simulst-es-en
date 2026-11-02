@@ -31,6 +31,9 @@ import torch
 #: Whisper encodes 30 s into 1500 frames.
 FRAMES_PER_SECOND = 50.0
 
+#: What a decoder yields for an incomplete multi-byte character.
+REPLACEMENT = "\ufffd"
+
 
 @dataclass
 class AlignAttConfig:
@@ -69,6 +72,9 @@ class StreamState:
     audio: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     token_ids: list[int] = field(default_factory=list)
     emissions: list[Emission] = field(default_factory=list)
+    #: Text handed to the viewer so far. Trails :attr:`token_ids` whenever the
+    #: last token carries only part of a multi-byte character.
+    shown: str = ""
     finished: bool = False
 
 
@@ -163,6 +169,14 @@ class SimultaneousTranslator:
     def finish(self) -> list[Emission]:
         """Flush the tail: no audio is still arriving, so the edge rule is off."""
         emitted = self._step(final=True)
+        # A character left half-decoded at the end would otherwise never be
+        # shown. Nothing more is coming, so release whatever decodes.
+        remainder = self.text[len(self.state.shown) :]
+        if remainder and not remainder.endswith(REPLACEMENT):
+            tail = Emission(text=remainder, time_s=self.elapsed_s, frame=-1)
+            self.state.shown = self.text
+            self.state.emissions.append(tail)
+            emitted = [*emitted, tail]
         self.state.finished = True
         return emitted
 
@@ -209,22 +223,27 @@ class SimultaneousTranslator:
             if not final and frame >= cutoff:
                 break
 
-            # Decoding the token alone is wrong for byte-level BPE: a token can
-            # carry part of a multi-byte character and decodes to U+FFFD until
-            # the rest arrives. Taking the delta of the decoded prefix instead
-            # yields nothing while a character is incomplete and the whole
-            # character once it is, so no replacement glyph ever reaches the
-            # screen. The token ids themselves are append-only either way.
-            before = self.text
             self.state.token_ids.append(token)
+            decoder_input = torch.tensor([[token]], device=self.model.device)
+
+            # Byte-level BPE can emit a token carrying only part of a multi-byte
+            # character, which decodes to U+FFFD until the rest arrives. The
+            # delta is therefore taken against the text already SHOWN rather
+            # than against the decoded prefix: an unresolved tail emits nothing
+            # now and the whole character once it resolves, so no replacement
+            # glyph reaches the screen and no shown character is ever rewritten.
+            decoded = self.text
+            if decoded.endswith(REPLACEMENT):
+                continue
+
             emission = Emission(
-                text=self.text[len(before) :],
+                text=decoded[len(self.state.shown) :],
                 time_s=self.elapsed_s,
                 frame=frame,
             )
+            self.state.shown = decoded
             self.state.emissions.append(emission)
             fresh.append(emission)
-            decoder_input = torch.tensor([[token]], device=self.model.device)
 
         return fresh
 
