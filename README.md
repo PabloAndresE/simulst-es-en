@@ -27,42 +27,77 @@ withheld. Everything else is committed permanently — which is why the measured
 rate is **0.000 at every operating point**, and why the cost shows up as latency instead
 of as text flickering in front of the reader.
 
-## The result: a curve, not a score
+## Does the policy earn its complexity?
 
-200 held-out utterances, 0.5 s chunks, one H200. `f` is the dial — how many frames at the
-edge of the audio count as "still arriving":
+A curve against the offline ceiling says what a policy costs. It does not say whether
+writing it was worth the trouble. Two baselines answer that: **wait-k**, which emits on a
+fixed schedule and reads nothing from the model, and **re-translation**, which redecodes
+the whole prefix every chunk and is free to rewrite the screen.
+
+133 synthetic long-form utterances (mean 23.7 s), three disjoint slices of the split,
+44 utterances each, one-second chunks, fine-tuned `whisper-small`:
+
+| Policy | BLEU | Average Lagging | Revisions |
+|---|---|---|---|
+| Offline (wait for everything) | 35.44 ±1.80 | 23.68 s | 0.000 |
+| wait-k `k=4` | 35.07 ±1.32 | 4.60 s ±0.32 | 0.009 |
+| wait-k `k=8` | 35.04 ±1.24 | 8.10 s ±0.19 | 0.006 |
+| Re-translation | 35.44 ±1.80 | **0.45 s** ±0.06 | **0.502** |
+| AlignAtt `f=32` | 32.77 ±2.07 | 1.63 s ±0.43 | 0.014 |
+| **AlignAtt `f=64`** | **34.30 ±1.75** | **2.12 s** ±0.32 | 0.006 |
+
+**In BLEU, AlignAtt and wait-k cannot be told apart** — 34.30 ±1.75 against 35.07 ±1.32,
+intervals overlapping. **In lag they can**: 2.12 ±0.32 against 4.60 ±0.32, intervals
+disjoint. The defensible claim is therefore narrow and worth stating exactly: *at a
+quality difference this sample cannot resolve, AlignAtt runs at under half the delay.*
+
+Re-translation is the useful foil. It matches offline quality at 0.45 s, and pays for it
+by rewriting the screen in **half** of all updates. No policy dominates: they occupy
+different corners of quality, latency and stability, and which corner matters is a
+property of the application, not of the method.
+
+### The comparison is meaningless on short clips, and that is a finding
+
+Run on raw CoVoST (mean 5.15 s) the same table said the opposite — wait-k `k=2` at 16.30
+BLEU and 1.96 s beating AlignAtt `f=64` at 15.55 BLEU and 2.24 s, better on both axes.
+
+That reading was an artefact. At a one-second chunk a five-second clip allows five
+decisions, and most of the output comes from the final flush, where every policy alike
+holds the complete utterance. The benchmark was measuring the flush, not the policy.
+
+Long-form here is **synthetic**: consecutive clips concatenated with a short gap and
+references joined in the same order. It buys length, not naturalness — real speech has
+discourse flow and prosodic continuity across sentence boundaries that concatenated
+Common Voice readings do not.
+
+## The quality-latency curve
+
+200 held-out utterances, 0.5 s chunks, one H200, base against fine-tuned:
 
 | Policy | Base BLEU | Fine-tuned BLEU | Lag | Token revisions |
 |---|---|---|---|---|
-| Offline (wait for everything) | 37.61 | 38.31 | 6.26 s | 0.000 |
+| Offline | 37.61 | 38.31 | 6.26 s | 0.000 |
 | AlignAtt `f=8` | 13.21 | 22.68 | **0.61 s** | 0.000 |
 | AlignAtt `f=16` | 19.04 | 27.96 | 0.83 s | 0.000 |
 | AlignAtt `f=32` | 24.12 | 33.49 | 1.15 s | 0.000 |
 | AlignAtt `f=64` | 32.90 | 36.36 | 1.76 s | 0.000 |
 | **AlignAtt `f=100`** | 35.00 | **38.01** | **2.55 s** | 0.000 |
 
-**At two seconds of margin the fine-tuned model keeps 99% of its offline quality while
-cutting delay from 6.26 s to 2.55 s.** At the aggressive end it degrades hard — `f=8`
-answers in 0.6 s and loses 41% of the quality — which is the conventional warning about
-streaming Whisper appearing as the bottom of a dial rather than as a verdict.
-
 ### Fine-tuning is worth thirteen times more under streaming than offline
 
-The two columns above are the same two checkpoints, and the gap between them is not
-constant:
+The two columns are the same two checkpoints, and the gap between them is not constant:
 
 | | Offline | `f=8` | `f=16` | `f=32` |
 |---|---|---|---|---|
 | Gain from fine-tuning | **+0.70** | **+9.47** | +8.92 | +9.37 |
 
 An offline benchmark values this fine-tune at +0.70 BLEU, which reads as noise. The same
-weights are worth +9.47 BLEU when the model has to translate an audio prefix. Fine-tuning
-on complete utterances made the model robust to *incomplete* ones, and the standard
+weights are worth +9.47 BLEU when the model must translate an audio prefix. Training on
+complete utterances made the model robust to *incomplete* ones, and the standard
 evaluation cannot see that at all.
 
-This is the finding that justifies the whole exercise: **the offline number was measuring
-the wrong thing.** If the target is a live translator, picking a checkpoint by offline BLEU
-would have left most of the available quality on the table.
+**The offline number was measuring the wrong thing.** Selecting a checkpoint by offline
+BLEU, for a system that will stream, discards most of the quality already paid for.
 
 ### Revisions: measure the tokens, not the string
 
@@ -134,14 +169,32 @@ you.
 
 ## The model underneath
 
+### Held-out test, read once
+
+The test split is gated behind `--confirm-final` and was read a single time, after the
+model was frozen. All 13,221 utterances:
+
+| Model | Test BLEU |
+|---|---|
+| `whisper-small` zero-shot | 31.23 |
+| **Fine-tuned, one epoch** | **35.45** |
+
+**+4.22 BLEU.** Validation had reported +2.21 on the same comparison, so tuning decisions
+made on validation understated what the fine-tune was worth rather than overstating it —
+the less common direction, and the reason the split stays sealed until the end.
+
+For comparison, published CoVoST 2 es→en systems of the era this dataset was released
+report in the low-to-mid thirties. This number is **not** a benchmark claim: Whisper is
+pretrained on vastly more audio than systems trained from scratch, which makes the
+comparison a different race.
+
 ### Fine-tuning `whisper-small`
 
-Fine-tuning `whisper-small` on CoVoST 2 es→en (113 h), against the zero-shot model that
-already performs the task. BLEU on 1,000 validation utterances, greedy decoding, one H200:
+Validation BLEU on 1,000 utterances, one H200:
 
 | Configuration | Trainable params | BLEU | GPU time |
 |---|---|---|---|
-| `whisper-small` zero-shot | — | 33.61 | — |
+| Zero-shot | — | 33.61 | — |
 | Full fine-tune, 3 epochs | 241.7M (100%) | 35.82 | 33 min |
 | **Full fine-tune, 1 epoch** | 241.7M (100%) | **36.13** | 12.8 min |
 | Frozen encoder, 1 epoch | 153.6M (63.5%) | 35.30 | 7.9 min |
@@ -149,11 +202,11 @@ already performs the task. BLEU on 1,000 validation utterances, greedy decoding,
 **One epoch beats three, at a third of the cost.** Not because later epochs are harmful in
 themselves: `OneCycleLR` spreads its decay over the configured total, so the three-epoch
 run was still at a high learning rate when it passed the one-epoch mark. The honest
-statement is *one epoch with a completed schedule beats three*, and the three-epoch run
-then overfits — train loss 1.01 → 0.37 while BLEU falls 35.82 → 34.76.
+statement is *one epoch with a completed schedule beats three*, and the longer run then
+overfits — train loss 1.01 → 0.37 while BLEU falls 35.82 → 34.76.
 
 **Fine-tuning dips below the model it started from.** Evaluating four times inside the
-first epoch shows the trajectory a per-epoch schedule hides:
+first epoch shows what a per-epoch schedule hides:
 
 | Progress | Full fine-tune | Frozen encoder |
 |---|---|---|
@@ -162,50 +215,34 @@ first epoch shows the trajectory a per-epoch schedule hides:
 | 75% | 35.85 | 35.28 |
 | 100% | **36.13** | 35.30 |
 
-A quarter of the way through, full fine-tuning is *worse than not training at all*, and it
-only passes the baseline after the halfway point.
+A quarter of the way through, full fine-tuning is *worse than not training at all*. With
+the encoder frozen it never happens: that arm is above zero-shot at every measured point,
+for 0.83 BLEU and 40% less wall clock. **The dip is the encoder being pulled off its
+pretrained solution**, not fine-tuning in general — a trade-off invisible from a final
+number.
 
-**The dip comes from disturbing the encoder.** With the encoder frozen it never happens:
-the frozen arm is above zero-shot at every measured point. Freezing costs 0.83 BLEU and
-saves 40% of the wall clock, and buys monotone progress. That is a trade-off worth
-knowing, and it is not visible from a final number.
+A caveat on these tables: zero-shot validation *loss* is not comparable with the
+fine-tuned figures, because the base model writes different punctuation and casing and
+teacher forcing penalises that regardless of translation quality. BLEU is the only column
+that compares across the two.
 
-A caveat on the table: zero-shot validation *loss* is not comparable with the fine-tuned
-figures, because the base model writes different punctuation and casing and teacher
-forcing penalises that regardless of translation quality. BLEU is the only column that
-compares across the two.
+## Running it on CPU
 
-## The question
+`deploy/Dockerfile` bakes the weights in and sets `HF_HUB_OFFLINE=1`, so a started
+container does no network I/O. Measured with `scripts/bench_cpu.py` on an M1 Pro CPU,
+`whisper-small`, per chunk against the chunk budget:
 
-A simultaneous system is not a different model, it is a different *decision*: given half
-an utterance, do you emit now and risk being wrong, or wait and accumulate lag? That
-decision — the emission policy — is where the research sits, and it is inference-time
-logic you write yourself.
+| Chunk | Median | Max | Budget | Verdict |
+|---|---|---|---|---|
+| 0.5 s | 1100 ms | 4560 ms | 500 ms | falls behind |
+| 1.0 s | 1083 ms | 1254 ms | 1000 ms | falls behind |
+| **2.0 s** | 1108 ms | 1252 ms | 2000 ms | **keeps up** |
 
-## Why Whisper is the starting point, and the baseline
-
-Whisper ships an X→English translation task, so `openai/whisper-small` with
-`task="translate"` **already performs this job**. That makes the zero-shot model a real
-baseline to beat rather than an arbitrary initialisation.
-
-The baseline is recorded *before* any weights move, by the runner itself, so the
-comparison cannot be reconstructed after the fact. On 1,000 validation utterances with
-greedy decoding, `whisper-small` zero-shot scores **BLEU 33.61**.
-
-(A 32-clip probe on a laptop had given 23.99 for the same model. Small samples of BLEU
-move by ten points; the 1,000-utterance figure is the one to quote.)
-
-Sample output (zero-shot `whisper-small`):
-
-```
-hyp: They inhabit shallow waters and rocky.
-ref: It lives in shallow, rocky water.
-
-hyp: It mainly operates cargo and cargo regional flights.
-ref: It mainly operates regional cabotage and cargo flights.
-```
-
-Reasonable, imperfect, clear headroom. That is the right place to start.
+Compute per chunk is roughly constant at ~1.1 s because the encoder always processes a
+padded 30 s window regardless of how much real audio arrived. **On CPU the chunk must be
+at least 2 s**, which puts a floor under latency: the sub-2-second figures elsewhere in
+this README require a GPU. A deployment that quotes them on CPU hardware is quoting
+numbers it cannot reach.
 
 ## Data
 
@@ -266,6 +303,12 @@ python -m simulst.live --file docs/assets/sample_es.wav --compare
 # reproduce the curve
 python -m simulst.stream_eval --thresholds 8 16 32 64 100 --limit 200
 
+# every policy over the same long-form audio, three slices
+python -m simulst.compare --concat 4 --seeds 0 1 2 --limit 200
+
+# what it costs on CPU
+python scripts/bench_cpu.py --chunk-s 0.5 1.0 2.0
+
 # the model underneath
 python scripts/preflight.py --config configs/server.yaml
 make smoke && make eval-zero && make train
@@ -298,6 +341,8 @@ read test once, when the model is frozen.
 ```
 src/simulst/
   simultaneous.py  the AlignAtt policy and the streaming translator
+  policies.py      wait-k and re-translation, the baselines it is measured against
+  compare.py       all policies over identical audio, with a spread per policy
   display.py       the in-place terminal panel the demo and the GIF share
   stream_eval.py   the quality-latency sweep
   live.py          microphone and file demos
@@ -310,18 +355,26 @@ src/simulst/
   config.py        dataclass config loaded from YAML
 scripts/           download, preflight, server setup, demo GIF
 results/           raw metrics from every run in this README
-tests/             62 tests, no weights required
+tests/             86 tests, no weights required
 ```
 
 ## Limitations
 
-- **The streaming curve is 200 utterances on one seed.** Enough to establish the shape and
-  the base-vs-fine-tuned gap, not enough for a significance claim about any single point.
+- **The policy comparison is 44 utterances per slice, three slices.** Enough to separate
+  the lag figures, not enough to separate the BLEU figures — which is why the text says
+  only that.
+- **Long-form audio is synthetic**, built by concatenating consecutive clips. Real
+  long-form speech has discourse structure that this does not reproduce.
+- **The streaming curve is 200 utterances on one slice.**
 - **CoVoST 2 clips average 5.15 s.** Simultaneous translation has the least to prove on
   short utterances; the curve would look different on long-form speech, which is the
   honest next measurement (Europarl-ST, MuST-C).
 - **`f` was swept at five points.** The optimum may lie past `f=100`, where the policy
   approaches offline behaviour and the latency advantage disappears.
+- **One language pair, read speech.** CoVoST 2 is Common Voice: prepared sentences read
+  aloud. Spontaneous speech, disfluencies and non-peninsular accents are untested, and a
+  24-second synthetic utterance already produced one domain error — *ensayos* in a
+  clinical context rendered as "rehearsals" rather than "trials".
 - **Average Lagging assumes a constant-rate oracle**, which is a crude model of how a
   human interpreter actually paces output.
 
@@ -344,6 +397,8 @@ tests/             62 tests, no weights required
 
 - Papi et al., *AlignAtt: Using Attention-based Audio-Translation Alignments as a Guide
   for Simultaneous Speech Translation* (2023) — the policy implemented here
+- Ma et al., *STACL: Simultaneous Translation with Implicit Anticipation and Controllable
+  Latency* (2019) — Average Lagging, and the wait-k baseline
 - Ma et al., *STACL: Simultaneous Translation with Implicit Anticipation and Controllable
   Latency* (2019) — Average Lagging
 - Wang et al., *CoVoST 2* (2020)

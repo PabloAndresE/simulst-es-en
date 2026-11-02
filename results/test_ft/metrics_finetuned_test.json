@@ -1,0 +1,8 @@
+{
+  "loss": 0.96087184429457,
+  "bleu": 35.44557366742496,
+  "examples": 13221,
+  "split": "test",
+  "checkpoint": "runs/dense-eval/best",
+  "hours": 22.71
+}

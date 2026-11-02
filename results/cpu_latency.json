@@ -1,0 +1,36 @@
+{
+  "model": "checkpoints/ft-best",
+  "device": "cpu",
+  "rows": [
+    {
+      "chunk_s": 0.5,
+      "median_ms": 1099.9420419684611,
+      "p90_ms": 1416.6163749760017,
+      "max_ms": 4559.994084003847,
+      "budget_ms": 500.0,
+      "headroom_ms": -4059.994084003847,
+      "realtime": false,
+      "chunks": 21
+    },
+    {
+      "chunk_s": 1.0,
+      "median_ms": 1082.8435830189846,
+      "p90_ms": 1192.6187920034863,
+      "max_ms": 1253.6851670010947,
+      "budget_ms": 1000.0,
+      "headroom_ms": -253.68516700109467,
+      "realtime": false,
+      "chunks": 11
+    },
+    {
+      "chunk_s": 2.0,
+      "median_ms": 1108.278812491335,
+      "p90_ms": 1251.9619169761427,
+      "max_ms": 1251.9619169761427,
+      "budget_ms": 2000.0,
+      "headroom_ms": 748.0380830238573,
+      "realtime": true,
+      "chunks": 6
+    }
+  ]
+}
