@@ -5,6 +5,9 @@ rewritten.
 
 ![The policy translating a 10.4 s utterance](docs/assets/demo.gif)
 
+*The GIF is a frame-accurate rendering of the terminal panel the CLI draws, from the same
+policy run — not a mock-up of an interface the repository does not ship.*
+
 ```bash
 python -m simulst.live --mic                                 # talk to it
 python -m simulst.live --file clip.wav --compare             # replay a recording
@@ -264,6 +267,7 @@ read test once, when the model is frozen.
 ```
 src/simulst/
   simultaneous.py  the AlignAtt policy and the streaming translator
+  display.py       the in-place terminal panel the demo and the GIF share
   stream_eval.py   the quality-latency sweep
   live.py          microphone and file demos
   metrics.py       BLEU, Average Lagging, revision rate
@@ -275,7 +279,7 @@ src/simulst/
   config.py        dataclass config loaded from YAML
 scripts/           download, preflight, server setup, demo GIF
 results/           raw metrics from every run in this README
-tests/             43 tests, no weights required
+tests/             62 tests, no weights required
 ```
 
 ## Limitations
