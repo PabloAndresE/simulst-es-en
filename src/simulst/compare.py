@@ -74,12 +74,38 @@ def run_policy(translator, dataset, chunk_s: float, label: str) -> dict:
     }
 
 
+def summarise(rows: list[dict], seeds: list[int]) -> None:
+    """Mean and spread per policy, so no single slice is mistaken for a result."""
+    import statistics
+
+    print(f"{'policy':<22}{'BLEU':>16}{'lag':>16}{'revisions':>12}")
+    print("-" * 66)
+    for label in dict.fromkeys(row["policy"] for row in rows):
+        scores = [row["bleu"] for row in rows if row["policy"] == label]
+        lags = [row["average_lagging_s"] for row in rows
+                if row["policy"] == label and row["average_lagging_s"] is not None]
+        revisions = [row["revision_rate"] for row in rows if row["policy"] == label]
+        spread = f"+-{statistics.stdev(scores):.2f}" if len(scores) > 1 else ""
+        lag_spread = f"+-{statistics.stdev(lags):.2f}" if len(lags) > 1 else ""
+        print(
+            f"{label:<22}{statistics.mean(scores):>10.2f} {spread:<5}"
+            f"{statistics.mean(lags):>10.2f}s {lag_spread:<5}"
+            f"{statistics.mean(revisions):>11.3f}"
+        )
+    if len(seeds) < 2:
+        print("\nsingle seed: no spread, nothing here is a significance claim")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/server.yaml")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--split", default="validation")
     parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument("--concat", type=int, default=1,
+                        help="join N consecutive clips into one long utterance")
+    parser.add_argument("--seeds", type=int, nargs="+", default=[0],
+                        help="disjoint slices of the split; several give a spread")
     parser.add_argument("--chunk-s", type=float, default=1.0)
     parser.add_argument("--alignatt-f", type=int, nargs="+", default=[16, 64])
     parser.add_argument("--waitk", type=int, nargs="+", default=[2, 4, 8])
@@ -94,62 +120,71 @@ def main() -> None:
     model, processor = build(cfg.model, device, attn_implementation="eager")
     model.eval()
 
-    dataset = CoVoST2Dataset(
-        cfg.data.cache_dir, args.split, cfg.data.target_sample_rate, limit=args.limit
+    # Every seed is a DISJOINT slice of the split, so the spread across seeds
+    # measures variation over material rather than re-measuring one sample.
+    # Nothing here is random: the same seeds give the same clips every run.
+    full = CoVoST2Dataset(
+        cfg.data.cache_dir, args.split, cfg.data.target_sample_rate,
+        limit=args.limit * len(args.seeds), concat=args.concat,
     )
-    print(f"{len(dataset)} clips, {dataset.total_hours * 60:.1f} min, chunk {args.chunk_s}s\n")
+    per_seed = len(full) // len(args.seeds)
+    slices = {
+        seed: full.examples[index * per_seed : (index + 1) * per_seed]
+        for index, seed in enumerate(args.seeds)
+    }
+    mean_s = full.total_hours * 3600 / max(len(full), 1)
+    print(f"{len(full)} utterances, mean {mean_s:.1f}s, {per_seed} per seed, "
+          f"seeds {args.seeds}, chunk {args.chunk_s}s\n")
 
-    started = time.time()
-    offline = [translate_offline(model, processor, ex.audio) for ex in dataset]
-    references = [ex.translation for ex in dataset]
-    rows = [{
-        "policy": "offline",
-        "bleu": corpus_bleu(offline, references),
-        "average_lagging_s": sum(ex.duration_s for ex in dataset) / len(dataset),
-        "revision_rate": 0.0,
-        "token_revision_rate": 0.0,
-        "clips": len(dataset),
-        "seconds": time.time() - started,
-    }]
-
-    header = f"{'policy':<22}{'BLEU':>7}{'lag':>8}{'revisions':>12}{'tokens':>9}"
-    print(header)
-    print("-" * len(header))
-
-    def show(row: dict) -> None:
-        lag = row["average_lagging_s"]
-        print(
-            f"{row['policy']:<22}{row['bleu']:>7.2f}"
-            f"{(f'{lag:.2f}s' if lag is not None else 'n/a'):>8}"
-            f"{row['revision_rate']:>12.3f}{row['token_revision_rate']:>9.3f}"
+    def policies(label_only: bool = False):
+        """The arms under test, built fresh per seed."""
+        yield "offline", None
+        for k in args.waitk:
+            yield f"wait-k k={k}", lambda k=k: WaitKTranslator(
+                model, processor, WaitKConfig(k=k, chunk_s=args.chunk_s)
+            )
+        yield "re-translation", lambda: RetranslationTranslator(
+            model, processor, RetranslationConfig(chunk_s=args.chunk_s)
         )
+        for f in args.alignatt_f:
+            yield f"AlignAtt f={f}", lambda f=f: SimultaneousTranslator(
+                model, processor, AlignAttConfig(frame_threshold=f, chunk_s=args.chunk_s)
+            )
 
-    show(rows[0])
+    rows = []
+    for seed, examples in slices.items():
+        print(f"seed {seed} ({len(examples)} utterances)")
+        for label, factory in policies():
+            if factory is None:
+                started = time.time()
+                hypotheses = [translate_offline(model, processor, ex.audio) for ex in examples]
+                row = {
+                    "policy": "offline",
+                    "bleu": corpus_bleu(hypotheses, [e.translation for e in examples]),
+                    "average_lagging_s": sum(e.duration_s for e in examples) / len(examples),
+                    "revision_rate": 0.0,
+                    "token_revision_rate": 0.0,
+                    "clips": len(examples),
+                    "seconds": time.time() - started,
+                }
+            else:
+                row = run_policy(factory(), examples, args.chunk_s, label)
+            row["seed"] = seed
+            rows.append(row)
+            lag = row["average_lagging_s"]
+            print(
+                f"  {label:<20}{row['bleu']:>7.2f}"
+                f"{(f'{lag:.2f}s' if lag is not None else 'n/a'):>8}"
+                f"  rev {row['revision_rate']:.3f}"
+            )
+        print()
 
-    for k in args.waitk:
-        translator = WaitKTranslator(model, processor, WaitKConfig(k=k, chunk_s=args.chunk_s))
-        row = run_policy(translator, dataset, args.chunk_s, f"wait-k k={k}")
-        rows.append(row)
-        show(row)
-
-    translator = RetranslationTranslator(
-        model, processor, RetranslationConfig(chunk_s=args.chunk_s)
-    )
-    row = run_policy(translator, dataset, args.chunk_s, "re-translation")
-    rows.append(row)
-    show(row)
-
-    for f in args.alignatt_f:
-        translator = SimultaneousTranslator(
-            model, processor, AlignAttConfig(frame_threshold=f, chunk_s=args.chunk_s)
-        )
-        row = run_policy(translator, dataset, args.chunk_s, f"AlignAtt f={f}")
-        rows.append(row)
-        show(row)
+    summarise(rows, args.seeds)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"model": cfg.model.name, "chunk_s": args.chunk_s,
+                               "concat": args.concat, "seeds": args.seeds,
                                "rows": rows}, indent=2))
     print(f"\nwrote {out}")
 

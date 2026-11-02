@@ -7,7 +7,7 @@ materialises it once.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,12 +106,18 @@ class CoVoST2Dataset(torch.utils.data.Dataset):
         limit: int | None = None,
         max_duration_s: float = 30.0,
         on_corrupt: str = "skip",
+        concat: int = 1,
     ):
-        self.examples = [
+        examples = [
             ex
             for ex in iter_examples(root, split, target_rate, limit, on_corrupt)
             if ex.duration_s <= max_duration_s
         ]
+        if concat > 1:
+            examples = concatenate(examples, concat, sample_rate=target_rate)
+            # Whisper's window is 30 s; anything past it is silently truncated.
+            examples = [e for e in examples if e.duration_s <= 30.0]
+        self.examples = examples
         if not self.examples:
             raise RuntimeError(f"no usable examples in split {split!r}")
         self.target_rate = target_rate
@@ -153,3 +159,45 @@ class Collator:
             "labels": label_ids,
             "references": [e.translation for e in batch],
         }
+
+
+def concatenate(examples: Sequence[Example], group: int, gap_s: float = 0.3,
+                sample_rate: int = 16000) -> list[Example]:
+    """Join consecutive clips into longer synthetic utterances.
+
+    Simultaneous translation only differs from offline translation when the
+    utterance outlasts the policy's lookahead. CoVoST 2 clips average 5.15 s, so
+    at a one-second chunk there are five or six decisions per clip and most of
+    the output comes from the final flush, where every policy alike has the
+    whole utterance. Comparisons made there measure almost nothing.
+
+    Joining ``group`` clips with a short silence produces utterances long enough
+    for the policies to diverge, with references joined in the same order.
+
+    This is **synthetic** long-form and the README says so: real long-form
+    speech has discourse flow, anaphora and prosodic continuity across sentence
+    boundaries, and concatenated Common Voice readings have none of that. It
+    buys length, not naturalness.
+    """
+    if group < 2:
+        return list(examples)
+
+    silence = np.zeros(int(gap_s * sample_rate), dtype=np.float32)
+    joined = []
+    for start in range(0, len(examples) - group + 1, group):
+        batch = examples[start : start + group]
+        pieces: list[np.ndarray] = []
+        for index, example in enumerate(batch):
+            if index:
+                pieces.append(silence)
+            pieces.append(example.audio)
+        audio = np.concatenate(pieces)
+        joined.append(
+            Example(
+                audio=audio,
+                sentence=" ".join(e.sentence for e in batch),
+                translation=" ".join(e.translation for e in batch),
+                duration_s=len(audio) / sample_rate,
+            )
+        )
+    return joined

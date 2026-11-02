@@ -63,3 +63,30 @@ class TestCorruptRows:
 
     def test_dataset_builds_despite_corrupt_rows(self, shards_with_corrupt_row):
         assert len(CoVoST2Dataset(shards_with_corrupt_row, "train")) == 4
+
+
+class TestConcatenate:
+    """Synthetic long-form: the only way these policies diverge measurably."""
+
+    def test_grouping_reduces_the_count(self, parquet_shards):
+        dataset = CoVoST2Dataset(parquet_shards, "train", concat=3)
+        assert len(dataset) == 2  # 6 clips in groups of three
+
+    def test_duration_is_the_sum_plus_the_gaps(self, parquet_shards):
+        single = CoVoST2Dataset(parquet_shards, "train")
+        grouped = CoVoST2Dataset(parquet_shards, "train", concat=3)
+        assert grouped[0].duration_s > 3 * single[0].duration_s
+
+    def test_references_are_joined_in_order(self, parquet_shards):
+        grouped = CoVoST2Dataset(parquet_shards, "train", concat=3)
+        assert grouped[0].translation == "sentence 0 sentence 1 sentence 2"
+
+    def test_concat_of_one_is_a_no_op(self, parquet_shards):
+        assert len(CoVoST2Dataset(parquet_shards, "train", concat=1)) == 6
+
+    def test_a_trailing_partial_group_is_dropped(self, parquet_shards):
+        """Four clips in groups of three leaves one over; it is not emitted."""
+        from simulst.data import concatenate, iter_examples
+
+        examples = list(iter_examples(parquet_shards, "train"))[:4]
+        assert len(concatenate(examples, 3)) == 1
