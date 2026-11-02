@@ -13,9 +13,10 @@ from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
+import soundfile as sf
 import torch
 
-from simulst.audio import load
+from simulst.audio import load, resample
 
 COLUMNS = ("audio", "sentence", "translation")
 
@@ -28,6 +29,8 @@ class Example:
     sentence: str
     translation: str
     duration_s: float
+    #: Optional label, used by manifests to report results per recording set.
+    group: str | None = None
 
 
 def shard_paths(root: str | Path, split: str) -> list[Path]:
@@ -201,3 +204,58 @@ def concatenate(examples: Sequence[Example], group: int, gap_s: float = 0.3,
             )
         )
     return joined
+
+
+def load_manifest(path: str | Path, target_rate: int = 16000) -> list[Example]:
+    """Read a JSONL manifest of own recordings.
+
+    One object per line, audio paths relative to the manifest's directory:
+
+        {"audio": "setB/012.wav", "set": "B",
+         "sentence": "o sea, lo que pasa es que...",
+         "translation": "I mean, what happens is that..."}
+
+    ``set`` is optional and carried through so results can be reported per set;
+    see ``docs/RECORDING_PROTOCOL.md`` for why the sets are separated.
+    """
+    import json
+
+    manifest = Path(path)
+    root = manifest.parent
+    examples = []
+
+    for number, line in enumerate(manifest.read_text().splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{manifest}:{number}: {exc}") from exc
+
+        missing = {"audio", "translation"} - row.keys()
+        if missing:
+            raise ValueError(f"{manifest}:{number}: missing {sorted(missing)}")
+
+        audio_path = root / row["audio"]
+        if not audio_path.exists():
+            raise FileNotFoundError(f"{manifest}:{number}: no such audio {audio_path}")
+
+        raw, rate = sf.read(audio_path, dtype="float32", always_2d=False)
+        if raw.ndim > 1:
+            raw = raw.mean(axis=1)
+        audio = resample(raw.astype(np.float32), rate, target_rate)
+
+        examples.append(
+            Example(
+                audio=audio,
+                sentence=row.get("sentence", ""),
+                translation=row["translation"],
+                duration_s=len(audio) / target_rate,
+                group=row.get("set"),
+            )
+        )
+
+    if not examples:
+        raise RuntimeError(f"{manifest} contains no usable entries")
+    return examples

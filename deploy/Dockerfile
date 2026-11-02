@@ -14,8 +14,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/hf \
     OMP_NUM_THREADS=4
 
+# libsndfile decodes the audio; ffmpeg is only needed for container formats
+# soundfile will not open (mp4/m4a). Dropping it saves ~200 MB if the inputs are
+# wav, flac or mp3.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libsndfile1 ffmpeg \
+ && apt-get install -y --no-install-recommends libsndfile1 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -38,6 +41,7 @@ RUN python deploy/fetch_model.py "$MODEL" && python -c "import shutil; shutil.rm
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
 COPY configs ./configs
+COPY scripts ./scripts
 COPY docs/assets/sample_es.wav ./docs/assets/sample_es.wav
 
 ENTRYPOINT ["python", "-m", "simulst.live", "--device", "cpu", "--checkpoint", "/opt/model"]

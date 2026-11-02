@@ -353,9 +353,10 @@ src/simulst/
   train.py         fine-tuning CLI
   evaluate.py      scoring CLI, gated test split
   config.py        dataclass config loaded from YAML
-scripts/           download, preflight, server setup, demo GIF
+scripts/           download, preflight, server setup, demo GIF, CPU bench
+deploy/            CPU container with the weights baked in
 results/           raw metrics from every run in this README
-tests/             86 tests, no weights required
+tests/             95 tests, no weights required
 ```
 
 ## Limitations
@@ -374,7 +375,9 @@ tests/             86 tests, no weights required
 - **One language pair, read speech.** CoVoST 2 is Common Voice: prepared sentences read
   aloud. Spontaneous speech, disfluencies and non-peninsular accents are untested, and a
   24-second synthetic utterance already produced one domain error — *ensayos* in a
-  clinical context rendered as "rehearsals" rather than "trials".
+  clinical context rendered as "rehearsals" rather than "trials". That is an anecdote;
+  `docs/RECORDING_PROTOCOL.md` turns it into a measurement, and
+  `simulst.evaluate --manifest` scores it per recording set.
 - **Average Lagging assumes a constant-rate oracle**, which is a crude model of how a
   human interpreter actually paces output.
 

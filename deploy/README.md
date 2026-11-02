@@ -19,11 +19,24 @@ to.
 
 ## What it costs on CPU
 
-Measured on this image, `whisper-small`, one 10.4 s utterance, `--chunk-s 1.0`:
-see `results/cpu_latency.json`, produced by `scripts/bench_cpu.py`. The number
-that matters is per-chunk compute against the chunk budget — above the budget
-the policy falls behind the speaker and the latency figures in the README stop
-applying.
+`scripts/bench_cpu.py` is in the image, so the measurement can be repeated
+wherever the container runs rather than quoted from a different machine:
+
+```bash
+docker run --rm --network none --entrypoint python simulst \
+    scripts/bench_cpu.py --checkpoint /opt/model --device cpu --chunk-s 1.0 2.0
+```
+
+The number that matters is per-chunk compute against the chunk budget. Above the
+budget the policy falls behind the speaker and every latency figure in the main
+README becomes optimistic by a growing amount.
+
+## Size
+
+The image is several gigabytes, nearly all of it PyTorch and the baked weights.
+That is the cost of a container that needs no network: the alternative is a
+smaller image that downloads a gigabyte on first request, which fails in front
+of whoever you are demonstrating to.
 
 Microphone mode is not available in the container. Audio devices do not cross
 the boundary portably, and pretending otherwise would be the kind of claim this
