@@ -8,6 +8,7 @@ seconds of source audio.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -77,3 +78,23 @@ def revision_rate(partial_outputs: list[str]) -> float:
         if not current.startswith(previous)
     )
     return revisions / (len(partial_outputs) - 1)
+
+
+def token_revision_rate(histories: Sequence[Sequence[int]]) -> float:
+    """Revisions measured on token ids rather than on decoded text.
+
+    This is where a commit-once policy's guarantee actually lives. The text
+    version can report a small non-zero rate even when no token was ever
+    retracted, because byte-level BPE decodes an incomplete multi-byte
+    character as U+FFFD and rewrites it once the remaining bytes arrive.
+    Measured on CoVoST 2, that artefact alone accounts for a rate of about
+    0.01, entirely on curly quotes and accented characters.
+    """
+    if len(histories) < 2:
+        return 0.0
+    revisions = sum(
+        1
+        for previous, current in zip(histories[:-1], histories[1:], strict=True)
+        if list(current[: len(previous)]) != list(previous)
+    )
+    return revisions / (len(histories) - 1)

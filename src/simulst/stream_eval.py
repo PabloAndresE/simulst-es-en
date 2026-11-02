@@ -18,7 +18,7 @@ from pathlib import Path
 from simulst.config import Config
 from simulst.data import CoVoST2Dataset
 from simulst.metrics import Emission as MetricEmission
-from simulst.metrics import average_lagging, corpus_bleu, revision_rate
+from simulst.metrics import average_lagging, corpus_bleu, revision_rate, token_revision_rate
 from simulst.model import build
 from simulst.simultaneous import AlignAttConfig, SimultaneousTranslator, translate_offline
 
@@ -37,21 +37,25 @@ def evaluate_threshold(
     )
     translator = SimultaneousTranslator(model, processor, config)
 
-    hypotheses, references, lags, revisions = [], [], [], []
+    hypotheses, references, lags, revisions, token_revisions = [], [], [], [], []
     started = time.time()
 
     for example in dataset:
         translator.reset()
         step = max(1, int(chunk_s * 16000))
-        partials = []
+        partials, token_history = [], []
         for start in range(0, len(example.audio), step):
             translator.push(example.audio[start : start + step])
             partials.append(translator.text)
+            token_history.append(list(translator.state.token_ids))
         translator.finish()
+        partials.append(translator.text)
+        token_history.append(list(translator.state.token_ids))
 
         hypotheses.append(translator.text)
         references.append(example.translation)
-        revisions.append(revision_rate(partials + [translator.text]))
+        revisions.append(revision_rate(partials))
+        token_revisions.append(token_revision_rate(token_history))
 
         tokens = len(translator.state.emissions)
         if tokens:
@@ -70,6 +74,9 @@ def evaluate_threshold(
         "bleu": corpus_bleu(hypotheses, references),
         "average_lagging_s": sum(lags) / len(lags) if lags else None,
         "revision_rate": sum(revisions) / len(revisions) if revisions else 0.0,
+        "token_revision_rate": (
+            sum(token_revisions) / len(token_revisions) if token_revisions else 0.0
+        ),
         "clips": len(hypotheses),
         "seconds": time.time() - started,
     }
@@ -128,7 +135,8 @@ def main() -> None:
         lag = row["average_lagging_s"]
         print(
             f"alignatt f={threshold:<3d}        BLEU {row['bleu']:6.2f}  "
-            f"lag {lag:5.2f}s  revisions {row['revision_rate']:.3f}  "
+            f"lag {lag:5.2f}s  rev {row['revision_rate']:.3f} "
+            f"(tokens {row['token_revision_rate']:.3f})  "
             f"({row['seconds'] / 60:.1f} min)"
             if lag is not None
             else f"alignatt f={threshold:<3d}        BLEU {row['bleu']:6.2f}  lag n/a"

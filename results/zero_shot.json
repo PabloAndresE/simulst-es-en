@@ -1,0 +1,8 @@
+{
+  "loss": 5.1286893723502995,
+  "bleu": 33.61343590173463,
+  "examples": 1000,
+  "split": "validation",
+  "checkpoint": "openai/whisper-small (zero-shot)",
+  "hours": 1.64
+}

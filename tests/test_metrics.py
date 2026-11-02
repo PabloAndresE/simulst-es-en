@@ -1,6 +1,12 @@
 import pytest
 
-from simulst.metrics import Emission, average_lagging, corpus_bleu, revision_rate
+from simulst.metrics import (
+    Emission,
+    average_lagging,
+    corpus_bleu,
+    revision_rate,
+    token_revision_rate,
+)
 
 
 def test_bleu_is_perfect_for_identical_text():
@@ -43,3 +49,21 @@ def test_rewrites_count_as_revisions():
 
 def test_single_output_has_no_revisions():
     assert revision_rate(["the meeting"]) == 0.0
+
+
+class TestTokenRevisions:
+    """Where a commit-once policy's guarantee actually holds."""
+
+    def test_appending_tokens_is_not_a_revision(self):
+        assert token_revision_rate([[1], [1, 2], [1, 2, 3]]) == 0.0
+
+    def test_changing_an_earlier_token_is_a_revision(self):
+        assert token_revision_rate([[1, 2], [1, 9, 3]]) == pytest.approx(1.0)
+
+    def test_a_single_history_has_no_revisions(self):
+        assert token_revision_rate([[1, 2, 3]]) == 0.0
+
+    def test_text_can_look_revised_while_tokens_are_not(self):
+        """The U+FFFD artefact: identical ids, different decoded strings."""
+        assert token_revision_rate([[1], [1, 2]]) == 0.0
+        assert revision_rate(["\ufffd", "“Suo"]) == pytest.approx(1.0)

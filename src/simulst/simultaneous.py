@@ -209,13 +209,16 @@ class SimultaneousTranslator:
             if not final and frame >= cutoff:
                 break
 
+            # Decoding the token alone is wrong for byte-level BPE: a token can
+            # carry part of a multi-byte character and decodes to U+FFFD until
+            # the rest arrives. Taking the delta of the decoded prefix instead
+            # yields nothing while a character is incomplete and the whole
+            # character once it is, so no replacement glyph ever reaches the
+            # screen. The token ids themselves are append-only either way.
+            before = self.text
             self.state.token_ids.append(token)
             emission = Emission(
-                # Same reason as elsewhere: the BPE clean-up strips spaces before
-                # punctuation, and this string is what the viewer actually reads.
-                text=self.processor.tokenizer.decode(
-                    [token], skip_special_tokens=False, clean_up_tokenization_spaces=False
-                ),
+                text=self.text[len(before) :],
                 time_s=self.elapsed_s,
                 frame=frame,
             )
