@@ -1,0 +1,60 @@
+{
+  "model": "checkpoints/ft-best",
+  "chunk_s": 1.0,
+  "rows": [
+    {
+      "policy": "offline",
+      "bleu": 21.46432745529438,
+      "average_lagging_s": 6.516000000000001,
+      "revision_rate": 0.0,
+      "token_revision_rate": 0.0,
+      "clips": 12,
+      "seconds": 9.135780096054077
+    },
+    {
+      "policy": "wait-k k=2",
+      "bleu": 16.302901784303735,
+      "average_lagging_s": 1.964017472763448,
+      "revision_rate": 0.020833333333333332,
+      "token_revision_rate": 0.0,
+      "clips": 12,
+      "seconds": 30.633765935897827
+    },
+    {
+      "policy": "wait-k k=6",
+      "bleu": 21.18687212288371,
+      "average_lagging_s": 5.056094155844156,
+      "revision_rate": 0.0,
+      "token_revision_rate": 0.0,
+      "clips": 12,
+      "seconds": 13.486521005630493
+    },
+    {
+      "policy": "re-translation",
+      "bleu": 21.46432745529438,
+      "average_lagging_s": 0.09853500481000471,
+      "revision_rate": 0.5969907407407408,
+      "token_revision_rate": 0.5969907407407408,
+      "clips": 12,
+      "seconds": 47.617748975753784
+    },
+    {
+      "policy": "AlignAtt f=16",
+      "bleu": 13.106860175300877,
+      "average_lagging_s": 1.0415405012456869,
+      "revision_rate": 0.0,
+      "token_revision_rate": 0.0,
+      "clips": 12,
+      "seconds": 37.825523853302
+    },
+    {
+      "policy": "AlignAtt f=64",
+      "bleu": 15.552882887799667,
+      "average_lagging_s": 2.2432693984502707,
+      "revision_rate": 0.010416666666666666,
+      "token_revision_rate": 0.0,
+      "clips": 12,
+      "seconds": 30.883758068084717
+    }
+  ]
+}
