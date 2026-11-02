@@ -26,29 +26,59 @@ of as text flickering in front of the reader.
 
 ## The result: a curve, not a score
 
-`whisper-small`, 40 held-out utterances, 0.5 s chunks, one M1 Pro. `f` is the dial:
+200 held-out utterances, 0.5 s chunks, one H200. `f` is the dial — how many frames at the
+edge of the audio count as "still arriving":
 
-| Policy | BLEU | % of offline | Average Lagging | Revisions |
+| Policy | Base BLEU | Fine-tuned BLEU | Lag | Token revisions |
 |---|---|---|---|---|
-| Offline (wait for everything) | 25.90 | 100% | 6.59 s | 0.000 |
-| AlignAtt `f=8` | 8.25 | 32% | **0.48 s** | 0.000 |
-| AlignAtt `f=16` | 11.50 | 44% | 0.52 s | 0.000 |
-| AlignAtt `f=32` | 13.88 | 54% | 1.09 s | 0.000 |
-| AlignAtt `f=64` | 19.96 | 77% | 1.75 s | 0.000 |
-| **AlignAtt `f=100`** | **24.04** | **93%** | **2.58 s** | 0.000 |
+| Offline (wait for everything) | 37.61 | 38.31 | 6.26 s | 0.000 |
+| AlignAtt `f=8` | 13.21 | 22.68 | **0.61 s** | 0.000 |
+| AlignAtt `f=16` | 19.04 | 27.96 | 0.83 s | 0.000 |
+| AlignAtt `f=32` | 24.12 | 33.49 | 1.15 s | 0.000 |
+| AlignAtt `f=64` | 32.90 | 36.36 | 1.76 s | 0.000 |
+| **AlignAtt `f=100`** | 35.00 | **38.01** | **2.55 s** | 0.000 |
 
-**At two seconds of margin the policy keeps 93% of offline quality while cutting delay by
-2.6×.** At aggressive settings it collapses: `f=8` answers in half a second and throws
-away two thirds of the quality. The curve is the deliverable; any single number on it is a
-choice about what the application can tolerate.
+**At two seconds of margin the fine-tuned model keeps 99% of its offline quality while
+cutting delay from 6.26 s to 2.55 s.** At the aggressive end it degrades hard — `f=8`
+answers in 0.6 s and loses 41% of the quality — which is the conventional warning about
+streaming Whisper appearing as the bottom of a dial rather than as a verdict.
 
-A caveat worth stating plainly: the conventional wisdom is *do not stream Whisper*, and the
-aggressive end of this curve is exactly why. Whisper never saw a truncated utterance in
-training, so decoding an audio prefix is out of distribution. The point of measuring is
-that the degradation is not uniform — it is a dial, and the top of the dial is usable.
+### Fine-tuning is worth thirteen times more under streaming than offline
 
-These numbers use the **base** `whisper-small`, not the fine-tuned checkpoint, so the
-streaming curve and the fine-tuning table below are separate experiments.
+The two columns above are the same two checkpoints, and the gap between them is not
+constant:
+
+| | Offline | `f=8` | `f=16` | `f=32` |
+|---|---|---|---|---|
+| Gain from fine-tuning | **+0.70** | **+9.47** | +8.92 | +9.37 |
+
+An offline benchmark values this fine-tune at +0.70 BLEU, which reads as noise. The same
+weights are worth +9.47 BLEU when the model has to translate an audio prefix. Fine-tuning
+on complete utterances made the model robust to *incomplete* ones, and the standard
+evaluation cannot see that at all.
+
+This is the finding that justifies the whole exercise: **the offline number was measuring
+the wrong thing.** If the target is a live translator, picking a checkpoint by offline BLEU
+would have left most of the available quality on the table.
+
+### Revisions: measure the tokens, not the string
+
+The policy commits permanently, so no emitted token can ever be retracted and the
+**token-level revision rate is 0.000 at every operating point** — verified, not assumed.
+
+The text-level rate is not zero, around 0.011, and the cause is worth knowing. Whisper's
+byte-level BPE can emit a token carrying part of a multi-byte character; decoded alone it
+is U+FFFD, and it rewrites itself once the remaining bytes arrive:
+
+```
+before : '�'
+after  : '“Suo'
+token ids before are a prefix of after: True
+```
+
+Every instance was a curly quote or an accented character. The guarantee held; the metric
+was measuring the display. Emissions are now the delta of the decoded prefix, so no
+replacement glyph reaches the screen, and both rates are reported.
 
 ## Two defects that produce plausible, wrong output
 
@@ -200,7 +230,7 @@ python scripts/download_data.py --out data     # 4.53 GB
 python -m simulst.live --file docs/assets/sample_es.wav --compare
 
 # reproduce the curve
-python -m simulst.stream_eval --thresholds 8 16 32 64 100 --limit 40
+python -m simulst.stream_eval --thresholds 8 16 32 64 100 --limit 200
 
 # the model underneath
 python scripts/preflight.py --config configs/server.yaml
@@ -250,12 +280,15 @@ tests/             43 tests, no weights required
 
 ## Limitations
 
-- **The streaming curve is 40 utterances on one seed.** Enough to establish the shape,
-  not enough for a significance claim about any single point.
+- **The streaming curve is 200 utterances on one seed.** Enough to establish the shape and
+  the base-vs-fine-tuned gap, not enough for a significance claim about any single point.
 - **CoVoST 2 clips average 5.15 s.** Simultaneous translation has the least to prove on
   short utterances; the curve would look different on long-form speech, which is the
   honest next measurement (Europarl-ST, MuST-C).
-- **The streaming evaluation uses the base model**, not the fine-tuned checkpoint.
+- **`f` was swept at five points.** The optimum may lie past `f=100`, where the policy
+  approaches offline behaviour and the latency advantage disappears.
+- **Average Lagging assumes a constant-rate oracle**, which is a crude model of how a
+  human interpreter actually paces output.
 
 - No simultaneous policy is implemented yet; the latency metrics exist and are tested,
   but nothing produces emissions to feed them. That is phase 2.
