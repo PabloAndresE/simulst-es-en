@@ -22,9 +22,13 @@ from simulst.simultaneous import (
 
 class StubTokenizer:
     eos_token_id = 99
+    no_speech_id = 98
 
     def decode(self, ids, skip_special_tokens=True, clean_up_tokenization_spaces=False):
         return "".join(f"t{i}" for i in ids)
+
+    def get_added_vocab(self):
+        return {"<|nocaptions|>": self.no_speech_id}
 
 
 class StubFeatureExtractor:
@@ -49,9 +53,10 @@ class StubModel:
     dtype = torch.float32
     device = torch.device("cpu")
 
-    def __init__(self, frames, vocab=100):
+    def __init__(self, frames, vocab=100, no_speech=0.0):
         self.frames = list(frames)
         self.vocab = vocab
+        self.no_speech = no_speech
         self.calls = 0
         self.config = type("C", (), {"decoder_start_token_id": 10})()
         self.generation_config = type("G", (), {"alignment_heads": None})()
@@ -61,10 +66,24 @@ class StubModel:
         self.model = type("M", (), {"encoder": staticmethod(encoder)})()
 
     def __call__(self, **kwargs):
+        decoder_input = kwargs["decoder_input_ids"]
+
+        # The no-speech probe is a single start-of-transcript token.
+        if decoder_input.shape[1] == 1 and int(decoder_input[0, 0]) == 10:
+            logits = torch.zeros(1, 1, self.vocab)
+            # Softmax over `vocab` entries where the rest sit at zero: reaching
+            # probability p needs logit ln((vocab-1)*p / (1-p)), not ln(p).
+            others, p = self.vocab - 1, min(max(self.no_speech, 1e-9), 1 - 1e-9)
+            logits[0, 0, StubTokenizer.no_speech_id] = float(
+                torch.log(torch.tensor(others * p / (1 - p)))
+            )
+            return type("Out", (), {"logits": logits, "cross_attentions": (),
+                                    "past_key_values": None})()
+
         # Each policy step restarts generation from the committed prefix, which
         # arrives as a multi-token decoder input. Reset there, or the stub keeps
         # a counter the real model does not have.
-        if kwargs["decoder_input_ids"].shape[1] > 1:
+        if decoder_input.shape[1] > 1:
             self.calls = 0
 
         # A real model stops on its own; a stub that never emits EOT would run
@@ -258,3 +277,63 @@ class TestMultibyteCharacters:
         translator.push(silence(1.0))
         joined = "".join(e.text for e in translator.state.emissions)
         assert joined == translator.text
+
+
+class TestNoSpeechGate:
+    """Background noise must not become words the policy can never retract."""
+
+    def test_the_token_is_resolved_by_name(self):
+        from simulst.simultaneous import no_speech_token_id
+
+        assert no_speech_token_id(StubTokenizer()) == 98
+
+    def test_a_tokenizer_without_the_token_is_an_error(self):
+        """Silently falling back to the unknown id makes the probability zero."""
+        from simulst.simultaneous import no_speech_token_id
+
+        class Bare:
+            def get_added_vocab(self):
+                return {}
+
+        with pytest.raises(RuntimeError, match="no no-speech token"):
+            no_speech_token_id(Bare())
+
+    def test_speech_passes_the_gate(self):
+        translator = SimultaneousTranslator(
+            StubModel([10], no_speech=0.01), StubProcessor(),
+            AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
+        )
+        assert len(translator.push(silence(1.0))) == 1
+
+    def test_noise_is_dropped_before_decoding(self):
+        translator = SimultaneousTranslator(
+            StubModel([10], no_speech=0.9), StubProcessor(),
+            AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
+        )
+        assert translator.push(silence(1.0)) == []
+        assert translator.state.token_ids == []
+
+    def test_the_gate_can_be_disabled(self):
+        translator = SimultaneousTranslator(
+            StubModel([10], no_speech=0.99), StubProcessor(),
+            AlignAttConfig(frame_threshold=6, no_speech_threshold=1.0),
+        )
+        assert len(translator.push(silence(1.0))) == 1
+
+    def test_the_gate_also_applies_to_the_final_flush(self):
+        """Exempting finish() let every hallucination escape through it."""
+        translator = SimultaneousTranslator(
+            StubModel([10], no_speech=0.9), StubProcessor(),
+            AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
+        )
+        translator.push(silence(1.0))
+        assert translator.finish() == []
+        assert translator.text == ""
+
+    def test_speech_is_still_flushed_at_the_end(self):
+        translator = SimultaneousTranslator(
+            StubModel([48], no_speech=0.01), StubProcessor(),
+            AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
+        )
+        translator.push(silence(1.0))
+        assert len(translator.finish()) >= 1

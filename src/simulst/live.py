@@ -146,6 +146,8 @@ def main() -> None:
     parser.add_argument("--frame-threshold", type=int, default=16)
     parser.add_argument("--chunk-s", type=float, default=0.5)
     parser.add_argument("--min-audio-s", type=float, default=1.0)
+    parser.add_argument("--no-speech-threshold", type=float, default=0.5,
+                        help="drop a step above this no-speech probability; 1.0 disables")
     parser.add_argument("--device", default=None)
     parser.add_argument("--no-realtime", action="store_true", help="replay as fast as possible")
     parser.add_argument("--max-utterance-s", type=float, default=25.0,
@@ -173,6 +175,7 @@ def main() -> None:
             frame_threshold=args.frame_threshold,
             chunk_s=args.chunk_s,
             min_audio_s=args.min_audio_s,
+            no_speech_threshold=args.no_speech_threshold,
         ),
     )
 

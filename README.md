@@ -83,6 +83,37 @@ Every instance was a curly quote or an accented character. The guarantee held; t
 was measuring the display. Emissions are now the delta of the decoded prefix, so no
 replacement glyph reaches the screen, and both rates are reported.
 
+## Silence and background noise become words
+
+Whisper invents text from nothing. Six seconds of digital silence produced
+*"I will be there."*; a 60 Hz hum produced *"The End"*. Under a commit-forever policy
+those are permanent, and in a live session they arrive between every sentence.
+
+The model already scores this: it has a no-speech token, and one small decoder pass reads
+it. Measured on the fine-tuned checkpoint:
+
+| Input | p(no speech) |
+|---|---|
+| Digital silence | 0.89 |
+| White noise | 0.57 |
+| 60 Hz hum | 0.82 |
+| **Speech** | **0.0000** |
+
+A threshold of 0.5 separates them cleanly and silence, hum and noise all go to empty
+output while speech — including speech preceded by three seconds of noise — is untouched.
+Fine-tuning *sharpened* this calibration: the base checkpoint scores real speech at 0.09
+to 0.45, the fine-tuned one at 0.0000.
+
+Two traps on the way there, both of which fail quietly:
+
+- The token is named `<|nocaptions|>` in the released checkpoints, not `<|nospeech|>`.
+  Asking a tokenizer for a token it does not have returns the *unknown* id rather than
+  raising, so the probability came back as a constant 0.0000 for every input, silence
+  included. `no_speech_token_id` raises instead.
+- The gate first ran only while audio was arriving, exempting the final flush. Every
+  hallucination escaped through it unchanged. Whether more audio is coming has no bearing
+  on whether what already arrived was speech.
+
 ## Two defects that produce plausible, wrong output
 
 Both were mine, both were found only by running the thing on real audio.

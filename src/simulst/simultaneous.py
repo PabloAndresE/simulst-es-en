@@ -34,6 +34,23 @@ FRAMES_PER_SECOND = 50.0
 #: What a decoder yields for an incomplete multi-byte character.
 REPLACEMENT = "\ufffd"
 
+#: Whisper's "this is not speech" token. Named <|nocaptions|> in the released
+#: checkpoints and <|nospeech|> in some ports, so both are tried -- asking a
+#: tokenizer for a token it does not have returns the unknown id instead of
+#: failing, which silently turns the probability into a constant zero.
+NO_SPEECH_TOKENS = ("<|nocaptions|>", "<|nospeech|>")
+
+
+def no_speech_token_id(tokenizer) -> int:
+    """Resolve the no-speech token, refusing the silent unknown-id fallback."""
+    vocabulary = tokenizer.get_added_vocab()
+    for name in NO_SPEECH_TOKENS:
+        if name in vocabulary:
+            return int(vocabulary[name])
+    raise RuntimeError(
+        f"no no-speech token in this tokenizer; looked for {NO_SPEECH_TOKENS}"
+    )
+
 
 @dataclass
 class AlignAttConfig:
@@ -56,6 +73,10 @@ class AlignAttConfig:
     #: Audio required before decoding starts at all. Whisper hallucinates on
     #: fragments, and this policy cannot retract what it emits.
     min_audio_s: float = 1.0
+    #: Skip a step when Whisper's own no-speech probability exceeds this.
+    #: Measured on the fine-tuned checkpoint: silence 0.89, white noise 0.57,
+    #: 60 Hz hum 0.82, speech 0.0000. Set to 1.0 to disable the gate.
+    no_speech_threshold: float = 0.5
 
 
 @dataclass
@@ -147,6 +168,7 @@ class SimultaneousTranslator:
             sorted(set(getattr(model.generation_config, "suppress_tokens", None) or [])),
             dtype=torch.long,
         )
+        self._no_speech = no_speech_token_id(processor.tokenizer)
 
     def reset(self) -> None:
         self.state = StreamState()
@@ -192,6 +214,21 @@ class SimultaneousTranslator:
         ).input_features.to(self.model.device, dtype=self.model.dtype)
 
         encoder_outputs = self.model.model.encoder(features)
+
+        # Background noise and silence are not speech, and this policy cannot
+        # retract a word it hallucinates from them. Whisper already scores that
+        # question; one small decoder pass reads the answer.
+        #
+        # The gate applies on the final flush too. Whether more audio is coming
+        # has no bearing on whether what already arrived was speech, and an
+        # earlier version that exempted finish() let every hallucination escape
+        # through it: six seconds of silence still produced "I will be there."
+        if self.config.no_speech_threshold < 1.0:
+            start = torch.tensor([[self._prompt_ids[0]]], device=self.model.device)
+            probe = self.model(encoder_outputs=encoder_outputs, decoder_input_ids=start)
+            probability = torch.softmax(probe.logits[0, -1].float(), -1)[self._no_speech]
+            if float(probability) > self.config.no_speech_threshold:
+                return []
         # Frames beyond the real audio are padding; the policy must not trust them.
         limit = len(self.state.audio) / self.sample_rate * FRAMES_PER_SECOND
         cutoff = limit if final else limit - self.config.frame_threshold
