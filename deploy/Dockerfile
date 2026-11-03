@@ -31,12 +31,17 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir .
 
-# MODEL can point at a local directory copied into the build context, or at a
-# hub id. Either way it is resolved now, not at run time.
+# MODEL is a hub id, or a directory inside the build context. The whole deploy/
+# directory is copied because a local MODEL path has to exist INSIDE the image
+# for fetch_model.py to read it -- copying only the script leaves the weights
+# outside and the build fails with a bare exit 1.
+#
+# Both the staged copy and the pip/HF caches are removed in the same layer, or
+# they stay in the image forever at roughly the size of the model.
 ARG MODEL=openai/whisper-small
-ENV SIMULST_MODEL=$MODEL
-COPY deploy/fetch_model.py ./deploy/fetch_model.py
-RUN python deploy/fetch_model.py "$MODEL" && python -c "import shutil; shutil.rmtree('/root/.cache', ignore_errors=True)"
+COPY deploy ./deploy
+RUN python deploy/fetch_model.py "$MODEL" \
+ && rm -rf deploy/model /root/.cache
 
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 

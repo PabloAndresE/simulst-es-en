@@ -31,6 +31,29 @@ The number that matters is per-chunk compute against the chunk budget. Above the
 budget the policy falls behind the speaker and every latency figure in the main
 README becomes optimistic by a growing amount.
 
+Measured inside this image on an M1 Pro, fine-tuned `whisper-small`, 8 CPUs
+visible to the container:
+
+| Chunk | Median | Max | Budget | Verdict |
+|---|---|---|---|---|
+| 1.0 s | 2043 ms | 2334 ms | 1000 ms | falls behind |
+| 2.0 s | 2309 ms | 2584 ms | 2000 ms | falls behind |
+| **3.0 s** | 2199 ms | 2632 ms | 3000 ms | **keeps up** |
+| 4.0 s | 2246 ms | 2597 ms | 4000 ms | keeps up |
+
+**The container is roughly twice as slow as the same CPU natively** — 2043 ms
+against 1083 ms at a one-second chunk. Docker on macOS runs a Linux VM, so the
+work goes through virtualised CPU without Apple's AMX or Accelerate paths. On
+Linux hardware the gap should be far smaller, but it has not been measured there
+and this README will not pretend otherwise.
+
+The practical consequence: **in this container the chunk must be at least 3 s**,
+which puts a 3-second floor under latency. That is worse than the 2 s the host
+CPU needs and much worse than the sub-2-second figures the main README reports
+on a GPU. Compute per chunk is near-constant because the encoder always
+processes a padded 30 s window, so a smaller chunk buys responsiveness only
+until it stops fitting in the budget.
+
 ## Size
 
 The image is several gigabytes, nearly all of it PyTorch and the baked weights.

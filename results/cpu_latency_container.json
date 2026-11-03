@@ -1,0 +1,39 @@
+{
+  "note": "measured inside simulst:ft via docker run --network none, M1 Pro host",
+  "device": "cpu (docker linux vm, 8 cpus visible)",
+  "model": "/opt/model (fine-tuned whisper-small)",
+  "rows": [
+    {
+      "chunk_s": 1.0,
+      "median_ms": 2043,
+      "p90_ms": 2173,
+      "max_ms": 2334,
+      "budget_ms": 1000,
+      "realtime": false
+    },
+    {
+      "chunk_s": 2.0,
+      "median_ms": 2309,
+      "p90_ms": 2584,
+      "max_ms": 2584,
+      "budget_ms": 2000,
+      "realtime": false
+    },
+    {
+      "chunk_s": 3.0,
+      "median_ms": 2199,
+      "p90_ms": 2632,
+      "max_ms": 2632,
+      "budget_ms": 3000,
+      "realtime": true
+    },
+    {
+      "chunk_s": 4.0,
+      "median_ms": 2246,
+      "p90_ms": 2597,
+      "max_ms": 2597,
+      "budget_ms": 4000,
+      "realtime": true
+    }
+  ]
+}

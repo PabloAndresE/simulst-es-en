@@ -244,6 +244,11 @@ at least 2 s**, which puts a floor under latency: the sub-2-second figures elsew
 this README require a GPU. A deployment that quotes them on CPU hardware is quoting
 numbers it cannot reach.
 
+Inside the container it is worse again — 2043 ms per chunk against 1083 ms for the same
+CPU natively, because Docker on macOS virtualises the CPU and loses Apple's accelerated
+paths. There the chunk must be **at least 3 s**. Both measurements are in `results/`, and
+`deploy/README.md` has the breakdown.
+
 ## Data
 
 [`fixie-ai/covost2`](https://huggingface.co/datasets/fixie-ai/covost2), config `es_en` —
