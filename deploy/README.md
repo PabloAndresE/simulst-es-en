@@ -1,16 +1,24 @@
 # Running it as a container
 
 ```bash
-# base weights
+# the published fine-tuned checkpoint, the default
 docker build -f deploy/Dockerfile -t simulst .
 
-# or bake in the fine-tuned checkpoint
+# the base model instead
+docker build -f deploy/Dockerfile --build-arg MODEL=openai/whisper-small -t simulst:base .
+
+# a local directory, which must be inside the build context
 cp -r checkpoints/ft-best deploy/model
-docker build -f deploy/Dockerfile --build-arg MODEL=deploy/model -t simulst:ft .
+docker build -f deploy/Dockerfile --build-arg MODEL=deploy/model -t simulst:local .
 
 docker run --rm simulst                                   # the bundled sample
 docker run --rm -v "$PWD/clip.wav:/a.wav" simulst --file /a.wav --compare
 ```
+
+`MODEL` defaults to [`PabloAndresE/simulst-es-en`](https://huggingface.co/PabloAndresE/simulst-es-en),
+so the build works on a fresh clone. Earlier it required staging a 926 MB
+directory into the context by hand, which meant nobody but the author could
+build the image that mattered.
 
 The weights are resolved during the build and `HF_HUB_OFFLINE=1` is set, so a
 started container does no network I/O. That is deliberate: a demo that downloads

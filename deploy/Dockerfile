@@ -3,6 +3,9 @@
 #   docker build -f deploy/Dockerfile -t simulst .
 #   docker run --rm -v "$PWD/clip.wav:/audio.wav" simulst --file /audio.wav
 #
+# MODEL defaults to the published fine-tuned checkpoint, so this builds on any
+# machine without staging weights into the context first.
+#
 # The weights are baked in at build time and HF_HUB_OFFLINE is set, so the
 # container never reaches the network at run time: no cold-start download, no
 # surprise when the hub is slow, and the image is the artefact rather than a
@@ -38,7 +41,7 @@ RUN pip install --no-cache-dir .
 #
 # Both the staged copy and the pip/HF caches are removed in the same layer, or
 # they stay in the image forever at roughly the size of the model.
-ARG MODEL=openai/whisper-small
+ARG MODEL=PabloAndresE/simulst-es-en
 COPY deploy ./deploy
 RUN python deploy/fetch_model.py "$MODEL" \
  && rm -rf deploy/model /root/.cache
