@@ -41,11 +41,30 @@ visible to the container:
 | **3.0 s** | 2199 ms | 2632 ms | 3000 ms | **keeps up** |
 | 4.0 s | 2246 ms | 2597 ms | 4000 ms | keeps up |
 
-**The container is roughly twice as slow as the same CPU natively** — 2043 ms
-against 1083 ms at a one-second chunk. Docker on macOS runs a Linux VM, so the
-work goes through virtualised CPU without Apple's AMX or Accelerate paths. On
-Linux hardware the gap should be far smaller, but it has not been measured there
-and this README will not pretend otherwise.
+### Why the container is slower, with the obvious confound ruled out
+
+The image sets `OMP_NUM_THREADS=4` while the container sees 8 CPUs, so the first
+suspect was that cap rather than virtualisation. Measured at a one-second chunk,
+same model, same audio:
+
+| Threads | Container | Host |
+|---|---|---|
+| 4 | 2278 ms | 1317 ms |
+| 8 | **2735 ms** | 1233 ms |
+
+The cap was not the cause. **More threads make the container slower**, not
+faster — virtualised cores contend — so 4 is the right setting here, and at
+matched threads the container is still **1.73x slower**.
+
+What remains is where the matrix multiplications run. Whisper's encoder is
+almost entirely matmul. On macOS, PyTorch dispatches to Apple's Accelerate
+framework, which reaches **AMX**, a dedicated matrix coprocessor on the M-series
+silicon. Inside the Linux VM there is no Accelerate and no AMX: the same chip
+executes generic ARM kernels on NEON SIMD. Same hardware, no accelerator.
+
+**On real Linux hardware there is no VM** — Docker uses the host kernel directly
+— so this gap should mostly disappear. That has **not been measured here** and is
+stated as an expectation, not a result.
 
 The practical consequence: **in this container the chunk must be at least 3 s**,
 which puts a 3-second floor under latency. That is worse than the 2 s the host

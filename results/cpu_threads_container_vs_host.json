@@ -1,0 +1,37 @@
+{
+  "note": "controlled: same model, same audio, same chunk, only threads and venue differ",
+  "chunk_s": 1.0,
+  "model": "fine-tuned whisper-small",
+  "host": "M1 Pro, 8 cpus",
+  "rows": [
+    {
+      "venue": "container",
+      "omp_threads": 4,
+      "median_ms": 2278,
+      "p90_ms": 2511,
+      "max_ms": 2571
+    },
+    {
+      "venue": "container",
+      "omp_threads": 8,
+      "median_ms": 2735,
+      "p90_ms": 3114,
+      "max_ms": 3445
+    },
+    {
+      "venue": "host",
+      "omp_threads": 4,
+      "median_ms": 1317,
+      "p90_ms": 1467,
+      "max_ms": 1618
+    },
+    {
+      "venue": "host",
+      "omp_threads": 8,
+      "median_ms": 1233,
+      "p90_ms": 1333,
+      "max_ms": 1356
+    }
+  ],
+  "finding": "container is 1.73x slower at matched threads; more threads hurt inside the VM"
+}
