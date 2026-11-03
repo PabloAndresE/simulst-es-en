@@ -9,9 +9,13 @@ rewritten.
 policy run — not a mock-up of an interface the repository does not ship.*
 
 ```bash
-python -m simulst.live --mic                                 # talk to it
-python -m simulst.live --file clip.wav --compare             # replay a recording
+pip install -e .
+python -m simulst.live --mic --checkpoint PabloAndresE/simulst-es-en
+python -m simulst.live --file clip.wav --compare --checkpoint PabloAndresE/simulst-es-en
 ```
+
+Weights: [`PabloAndresE/simulst-es-en`](https://huggingface.co/PabloAndresE/simulst-es-en).
+Container: `docker build -f deploy/Dockerfile -t simulst .`
 
 ## What the hard part actually is
 
@@ -412,4 +416,13 @@ tests/             95 tests, no weights required
 - Wang et al., *CoVoST 2* (2020)
 - Radford et al., *Robust Speech Recognition via Large-Scale Weak Supervision* (2022)
 
-MIT licensed.
+## Artefacts
+
+| | |
+|---|---|
+| Fine-tuned weights | [`PabloAndresE/simulst-es-en`](https://huggingface.co/PabloAndresE/simulst-es-en) |
+| Raw metrics for every table above | `results/` |
+| CPU container | `deploy/Dockerfile`, builds from the published weights |
+| Recording protocol for own audio | `docs/RECORDING_PROTOCOL.md` |
+
+MIT licensed. The weights are Apache 2.0, inherited from Whisper.
