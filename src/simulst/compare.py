@@ -82,8 +82,11 @@ def summarise(rows: list[dict], seeds: list[int]) -> None:
     print("-" * 66)
     for label in dict.fromkeys(row["policy"] for row in rows):
         scores = [row["bleu"] for row in rows if row["policy"] == label]
-        lags = [row["average_lagging_s"] for row in rows
-                if row["policy"] == label and row["average_lagging_s"] is not None]
+        lags = [
+            row["average_lagging_s"]
+            for row in rows
+            if row["policy"] == label and row["average_lagging_s"] is not None
+        ]
         revisions = [row["revision_rate"] for row in rows if row["policy"] == label]
         spread = f"+-{statistics.stdev(scores):.2f}" if len(scores) > 1 else ""
         lag_spread = f"+-{statistics.stdev(lags):.2f}" if len(lags) > 1 else ""
@@ -102,10 +105,16 @@ def main() -> None:
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--split", default="validation")
     parser.add_argument("--limit", type=int, default=200)
-    parser.add_argument("--concat", type=int, default=1,
-                        help="join N consecutive clips into one long utterance")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0],
-                        help="disjoint slices of the split; several give a spread")
+    parser.add_argument(
+        "--concat", type=int, default=1, help="join N consecutive clips into one long utterance"
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="disjoint slices of the split; several give a spread",
+    )
     parser.add_argument("--chunk-s", type=float, default=1.0)
     parser.add_argument("--alignatt-f", type=int, nargs="+", default=[16, 64])
     parser.add_argument("--waitk", type=int, nargs="+", default=[2, 4, 8])
@@ -124,8 +133,11 @@ def main() -> None:
     # measures variation over material rather than re-measuring one sample.
     # Nothing here is random: the same seeds give the same clips every run.
     full = CoVoST2Dataset(
-        cfg.data.cache_dir, args.split, cfg.data.target_sample_rate,
-        limit=args.limit * len(args.seeds), concat=args.concat,
+        cfg.data.cache_dir,
+        args.split,
+        cfg.data.target_sample_rate,
+        limit=args.limit * len(args.seeds),
+        concat=args.concat,
     )
     per_seed = len(full) // len(args.seeds)
     slices = {
@@ -133,22 +145,33 @@ def main() -> None:
         for index, seed in enumerate(args.seeds)
     }
     mean_s = full.total_hours * 3600 / max(len(full), 1)
-    print(f"{len(full)} utterances, mean {mean_s:.1f}s, {per_seed} per seed, "
-          f"seeds {args.seeds}, chunk {args.chunk_s}s\n")
+    print(
+        f"{len(full)} utterances, mean {mean_s:.1f}s, {per_seed} per seed, "
+        f"seeds {args.seeds}, chunk {args.chunk_s}s\n"
+    )
 
     def policies(label_only: bool = False):
         """The arms under test, built fresh per seed."""
         yield "offline", None
         for k in args.waitk:
-            yield f"wait-k k={k}", lambda k=k: WaitKTranslator(
-                model, processor, WaitKConfig(k=k, chunk_s=args.chunk_s)
+            yield (
+                f"wait-k k={k}",
+                lambda k=k: WaitKTranslator(
+                    model, processor, WaitKConfig(k=k, chunk_s=args.chunk_s)
+                ),
             )
-        yield "re-translation", lambda: RetranslationTranslator(
-            model, processor, RetranslationConfig(chunk_s=args.chunk_s)
+        yield (
+            "re-translation",
+            lambda: RetranslationTranslator(
+                model, processor, RetranslationConfig(chunk_s=args.chunk_s)
+            ),
         )
         for f in args.alignatt_f:
-            yield f"AlignAtt f={f}", lambda f=f: SimultaneousTranslator(
-                model, processor, AlignAttConfig(frame_threshold=f, chunk_s=args.chunk_s)
+            yield (
+                f"AlignAtt f={f}",
+                lambda f=f: SimultaneousTranslator(
+                    model, processor, AlignAttConfig(frame_threshold=f, chunk_s=args.chunk_s)
+                ),
             )
 
     rows = []
@@ -183,9 +206,18 @@ def main() -> None:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"model": cfg.model.name, "chunk_s": args.chunk_s,
-                               "concat": args.concat, "seeds": args.seeds,
-                               "rows": rows}, indent=2))
+    out.write_text(
+        json.dumps(
+            {
+                "model": cfg.model.name,
+                "chunk_s": args.chunk_s,
+                "concat": args.concat,
+                "seeds": args.seeds,
+                "rows": rows,
+            },
+            indent=2,
+        )
+    )
     print(f"\nwrote {out}")
 
 

@@ -47,9 +47,7 @@ def no_speech_token_id(tokenizer) -> int:
     for name in NO_SPEECH_TOKENS:
         if name in vocabulary:
             return int(vocabulary[name])
-    raise RuntimeError(
-        f"no no-speech token in this tokenizer; looked for {NO_SPEECH_TOKENS}"
-    )
+    raise RuntimeError(f"no no-speech token in this tokenizer; looked for {NO_SPEECH_TOKENS}")
 
 
 @dataclass
@@ -287,9 +285,9 @@ class SimultaneousTranslator:
 
 def translate_offline(model, processor, audio: np.ndarray, sample_rate: int = 16000) -> str:
     """Wait for the whole utterance, then translate. The quality ceiling."""
-    features = processor(
-        audio, sampling_rate=sample_rate, return_tensors="pt"
-    ).input_features.to(model.device, dtype=model.dtype)
+    features = processor(audio, sampling_rate=sample_rate, return_tensors="pt").input_features.to(
+        model.device, dtype=model.dtype
+    )
     with torch.no_grad():
         generated = model.generate(features, num_beams=1)
     return processor.batch_decode(

@@ -164,8 +164,9 @@ class Collator:
         }
 
 
-def concatenate(examples: Sequence[Example], group: int, gap_s: float = 0.3,
-                sample_rate: int = 16000) -> list[Example]:
+def concatenate(
+    examples: Sequence[Example], group: int, gap_s: float = 0.3, sample_rate: int = 16000
+) -> list[Example]:
     """Join consecutive clips into longer synthetic utterances.
 
     Simultaneous translation only differs from offline translation when the

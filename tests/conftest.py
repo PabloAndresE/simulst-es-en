@@ -52,14 +52,19 @@ def shards_with_corrupt_row(tmp_path):
     rows = []
     for i in range(6):
         if i in (2, 4):
-            rows.append({"audio": {"bytes": b"", "path": f"{i}.wav"},
-                         "sentence": "", "translation": ""})
+            rows.append(
+                {"audio": {"bytes": b"", "path": f"{i}.wav"}, "sentence": "", "translation": ""}
+            )
             continue
         buffer = io.BytesIO()
-        sf.write(buffer, rng.standard_normal(48000).astype(np.float32) * 0.01, 48000,
-                 format="WAV")
-        rows.append({"audio": {"bytes": buffer.getvalue(), "path": f"{i}.wav"},
-                     "sentence": f"frase {i}", "translation": f"sentence {i}"})
+        sf.write(buffer, rng.standard_normal(48000).astype(np.float32) * 0.01, 48000, format="WAV")
+        rows.append(
+            {
+                "audio": {"bytes": buffer.getvalue(), "path": f"{i}.wav"},
+                "sentence": f"frase {i}",
+                "translation": f"sentence {i}",
+            }
+        )
 
     pq.write_table(pa.Table.from_pylist(rows), tmp_path / "train-00000-of-00001.parquet")
     return tmp_path

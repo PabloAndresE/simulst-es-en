@@ -53,7 +53,8 @@ class TestWaitK:
 
     def test_noise_is_gated(self):
         translator = WaitKTranslator(
-            CountingModel(no_speech=0.9), StubProcessor(),
+            CountingModel(no_speech=0.9),
+            StubProcessor(),
             WaitKConfig(k=1, no_speech_threshold=0.5),
         )
         assert translator.push(silence(1.0)) == []
@@ -92,7 +93,8 @@ class TestRetranslation:
 
     def test_noise_is_gated(self):
         translator = RetranslationTranslator(
-            CountingModel(no_speech=0.9), StubProcessor(),
+            CountingModel(no_speech=0.9),
+            StubProcessor(),
             RetranslationConfig(no_speech_threshold=0.5),
         )
         assert translator.push(silence(1.0)) == []

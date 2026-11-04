@@ -64,8 +64,9 @@ class Panel:
         filled = int(inner * max(0.0, min(fraction, 1.0)))
         return f"{BLUE}{'━' * filled}{GREY}{'━' * (inner - filled)}{RESET}"
 
-    def update(self, status: str, text: str, fraction: float | None = None,
-               offline: str | None = None) -> None:
+    def update(
+        self, status: str, text: str, fraction: float | None = None, offline: str | None = None
+    ) -> None:
         if not self.ansi:
             return
         if self._drawn:
@@ -75,7 +76,8 @@ class Panel:
             f"{BOLD}{self.title}{RESET}",
             f"{DIM}{self.subtitle}{RESET}",
             "",
-            f"{self._bar(fraction)} {status}" if fraction is not None
+            f"{self._bar(fraction)} {status}"
+            if fraction is not None
             else f"{GREY}{'─' * (self.width - 22)}{RESET} {status}",
             "",
         ]
@@ -83,7 +85,8 @@ class Panel:
         rows += [f"  {line}" for line in body]
         rows += [""] * (self.body_lines - len(body))
         rows.append(
-            f"  {GREEN}offline:{RESET} {offline[: self.width - 12]}" if offline
+            f"  {GREEN}offline:{RESET} {offline[: self.width - 12]}"
+            if offline
             else f"  {GREY}offline: waiting for the whole utterance{RESET}"
         )
         rows.append("")

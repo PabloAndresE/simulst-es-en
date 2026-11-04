@@ -17,9 +17,7 @@ def corpus_bleu(hypotheses: list[str], references: list[str]) -> float:
     import sacrebleu
 
     if len(hypotheses) != len(references):
-        raise ValueError(
-            f"{len(hypotheses)} hypotheses against {len(references)} references"
-        )
+        raise ValueError(f"{len(hypotheses)} hypotheses against {len(references)} references")
     return float(sacrebleu.corpus_bleu(hypotheses, [references]).score)
 
 
@@ -57,8 +55,7 @@ def average_lagging(
             break
 
     total = sum(
-        emission.source_time_s - index / rate
-        for index, emission in enumerate(emissions[:cutoff])
+        emission.source_time_s - index / rate for index, emission in enumerate(emissions[:cutoff])
     )
     return float(total / cutoff)
 

@@ -24,9 +24,7 @@ def test_waiting_for_the_whole_utterance_lags_most():
     duration, tokens = 6.0, 4
     offline = [Emission("w", duration) for _ in range(tokens)]
     streaming = [Emission("w", 1.5 * (i + 1)) for i in range(tokens)]
-    assert average_lagging(offline, duration, tokens) > average_lagging(
-        streaming, duration, tokens
-    )
+    assert average_lagging(offline, duration, tokens) > average_lagging(streaming, duration, tokens)
 
 
 def test_lagging_is_near_zero_for_an_oracle_rate():

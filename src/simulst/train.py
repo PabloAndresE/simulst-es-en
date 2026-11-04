@@ -122,10 +122,13 @@ def run(cfg: Config, device: str, quiet: bool = False) -> dict:
 
         for step, batch in enumerate(loaders["train"], start=1):
             with torch.autocast("cuda", enabled=use_amp):
-                loss = model(
-                    input_features=batch["input_features"].to(device),
-                    labels=batch["labels"].to(device),
-                ).loss / cfg.train.grad_accum
+                loss = (
+                    model(
+                        input_features=batch["input_features"].to(device),
+                        labels=batch["labels"].to(device),
+                    ).loss
+                    / cfg.train.grad_accum
+                )
             scaler.scale(loss).backward()
 
             if step % cfg.train.grad_accum == 0:

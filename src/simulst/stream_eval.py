@@ -32,9 +32,7 @@ def evaluate_threshold(
     min_audio_s: float,
 ) -> dict:
     """Run every clip through the policy at one setting of the dial."""
-    config = AlignAttConfig(
-        frame_threshold=threshold, chunk_s=chunk_s, min_audio_s=min_audio_s
-    )
+    config = AlignAttConfig(frame_threshold=threshold, chunk_s=chunk_s, min_audio_s=min_audio_s)
     translator = SimultaneousTranslator(model, processor, config)
 
     hypotheses, references, lags, revisions, token_revisions = [], [], [], [], []

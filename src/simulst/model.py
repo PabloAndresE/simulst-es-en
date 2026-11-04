@@ -17,9 +17,7 @@ def build(cfg: ModelConfig, device: str = "cpu", attn_implementation: str | None
     """Return ``(model, processor)`` configured for es->en translation."""
     from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-    processor = WhisperProcessor.from_pretrained(
-        cfg.name, language=cfg.language, task=cfg.task
-    )
+    processor = WhisperProcessor.from_pretrained(cfg.name, language=cfg.language, task=cfg.task)
     # PyTorch's fused SDPA kernel never materialises an attention matrix, so a
     # model loaded with it returns an EMPTY cross_attentions tuple when asked for
     # output_attentions=True -- with a warning, not an error. Anything reading

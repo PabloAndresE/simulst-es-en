@@ -60,6 +60,7 @@ class StubModel:
         self.calls = 0
         self.config = type("C", (), {"decoder_start_token_id": 10})()
         self.generation_config = type("G", (), {"alignment_heads": None})()
+
         def encoder(features):
             return type("E", (), {"last_hidden_state": torch.zeros(1, 1500, 4)})()
 
@@ -77,8 +78,9 @@ class StubModel:
             logits[0, 0, StubTokenizer.no_speech_id] = float(
                 torch.log(torch.tensor(others * p / (1 - p)))
             )
-            return type("Out", (), {"logits": logits, "cross_attentions": (),
-                                    "past_key_values": None})()
+            return type(
+                "Out", (), {"logits": logits, "cross_attentions": (), "past_key_values": None}
+            )()
 
         # Each policy step restarts generation from the committed prefix, which
         # arrives as a multi-token decoder input. Reset there, or the stub keeps
@@ -93,8 +95,9 @@ class StubModel:
             logits[0, 0, StubTokenizer.eos_token_id] = 10.0
             attention = torch.zeros(1, 2, 1, 1500)
             return type(
-                "Out", (), {"logits": logits, "cross_attentions": (attention,),
-                            "past_key_values": None}
+                "Out",
+                (),
+                {"logits": logits, "cross_attentions": (attention,), "past_key_values": None},
             )()
 
         index = self.calls
@@ -107,8 +110,7 @@ class StubModel:
         attention = torch.zeros(1, 2, 1, 1500)
         attention[0, :, 0, frame] = 1.0
         return type(
-            "Out", (), {"logits": logits, "cross_attentions": (attention,),
-                        "past_key_values": None}
+            "Out", (), {"logits": logits, "cross_attentions": (attention,), "past_key_values": None}
         )()
 
 
@@ -148,41 +150,48 @@ class TestAlignmentHeads:
 class TestPolicy:
     def test_a_token_at_the_edge_is_withheld(self):
         """One second buffered means frame 50; a token at 48 is inside the margin."""
-        translator = SimultaneousTranslator(StubModel([48]), StubProcessor(),
-                                            AlignAttConfig(frame_threshold=6))
+        translator = SimultaneousTranslator(
+            StubModel([48]), StubProcessor(), AlignAttConfig(frame_threshold=6)
+        )
         assert translator.push(silence(1.0)) == []
 
     def test_a_token_on_settled_audio_is_emitted(self):
-        translator = SimultaneousTranslator(StubModel([10]), StubProcessor(),
-                                            AlignAttConfig(frame_threshold=6))
+        translator = SimultaneousTranslator(
+            StubModel([10]), StubProcessor(), AlignAttConfig(frame_threshold=6)
+        )
         assert len(translator.push(silence(1.0))) == 1
 
     def test_the_threshold_is_what_decides(self):
         """Same audio, same attention: only the dial changes the outcome."""
-        patient = SimultaneousTranslator(StubModel([40]), StubProcessor(),
-                                         AlignAttConfig(frame_threshold=20))
-        eager = SimultaneousTranslator(StubModel([40]), StubProcessor(),
-                                       AlignAttConfig(frame_threshold=2))
+        patient = SimultaneousTranslator(
+            StubModel([40]), StubProcessor(), AlignAttConfig(frame_threshold=20)
+        )
+        eager = SimultaneousTranslator(
+            StubModel([40]), StubProcessor(), AlignAttConfig(frame_threshold=2)
+        )
         assert patient.push(silence(1.0)) == []
         assert len(eager.push(silence(1.0))) == 1
 
     def test_finish_flushes_what_the_policy_was_holding(self):
-        translator = SimultaneousTranslator(StubModel([48]), StubProcessor(),
-                                            AlignAttConfig(frame_threshold=6))
+        translator = SimultaneousTranslator(
+            StubModel([48]), StubProcessor(), AlignAttConfig(frame_threshold=6)
+        )
         translator.push(silence(1.0))
         assert translator.state.token_ids == []
         assert len(translator.finish()) >= 1
 
     def test_emissions_are_stamped_with_the_audio_they_had(self):
-        translator = SimultaneousTranslator(StubModel([10]), StubProcessor(),
-                                            AlignAttConfig(frame_threshold=6))
+        translator = SimultaneousTranslator(
+            StubModel([10]), StubProcessor(), AlignAttConfig(frame_threshold=6)
+        )
         emission = translator.push(silence(2.0))[0]
         assert emission.time_s == pytest.approx(2.0)
 
     def test_committed_tokens_are_never_rewritten(self):
         """The defining property: emitted text only ever grows."""
-        translator = SimultaneousTranslator(StubModel([5, 10, 15, 20]), StubProcessor(),
-                                            AlignAttConfig(frame_threshold=2))
+        translator = SimultaneousTranslator(
+            StubModel([5, 10, 15, 20]), StubProcessor(), AlignAttConfig(frame_threshold=2)
+        )
         seen = []
         for _ in range(4):
             translator.push(silence(0.5))
@@ -215,14 +224,18 @@ class TestFrameGeometry:
 class TestRunStream:
     def test_replay_returns_text_and_emissions(self):
         text, emissions = run_stream(
-            StubModel([5, 10, 15]), StubProcessor(), silence(1.5),
+            StubModel([5, 10, 15]),
+            StubProcessor(),
+            silence(1.5),
             AlignAttConfig(frame_threshold=2, chunk_s=0.5),
         )
         assert isinstance(text, str) and len(emissions) >= 1
 
     def test_emission_times_never_go_backwards(self):
         _, emissions = run_stream(
-            StubModel([5, 10, 15, 20]), StubProcessor(), silence(2.0),
+            StubModel([5, 10, 15, 20]),
+            StubProcessor(),
+            silence(2.0),
             AlignAttConfig(frame_threshold=2, chunk_s=0.5),
         )
         times = [e.time_s for e in emissions]
@@ -300,14 +313,16 @@ class TestNoSpeechGate:
 
     def test_speech_passes_the_gate(self):
         translator = SimultaneousTranslator(
-            StubModel([10], no_speech=0.01), StubProcessor(),
+            StubModel([10], no_speech=0.01),
+            StubProcessor(),
             AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
         )
         assert len(translator.push(silence(1.0))) == 1
 
     def test_noise_is_dropped_before_decoding(self):
         translator = SimultaneousTranslator(
-            StubModel([10], no_speech=0.9), StubProcessor(),
+            StubModel([10], no_speech=0.9),
+            StubProcessor(),
             AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
         )
         assert translator.push(silence(1.0)) == []
@@ -315,7 +330,8 @@ class TestNoSpeechGate:
 
     def test_the_gate_can_be_disabled(self):
         translator = SimultaneousTranslator(
-            StubModel([10], no_speech=0.99), StubProcessor(),
+            StubModel([10], no_speech=0.99),
+            StubProcessor(),
             AlignAttConfig(frame_threshold=6, no_speech_threshold=1.0),
         )
         assert len(translator.push(silence(1.0))) == 1
@@ -323,7 +339,8 @@ class TestNoSpeechGate:
     def test_the_gate_also_applies_to_the_final_flush(self):
         """Exempting finish() let every hallucination escape through it."""
         translator = SimultaneousTranslator(
-            StubModel([10], no_speech=0.9), StubProcessor(),
+            StubModel([10], no_speech=0.9),
+            StubProcessor(),
             AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
         )
         translator.push(silence(1.0))
@@ -332,7 +349,8 @@ class TestNoSpeechGate:
 
     def test_speech_is_still_flushed_at_the_end(self):
         translator = SimultaneousTranslator(
-            StubModel([48], no_speech=0.01), StubProcessor(),
+            StubModel([48], no_speech=0.01),
+            StubProcessor(),
             AlignAttConfig(frame_threshold=6, no_speech_threshold=0.5),
         )
         translator.push(silence(1.0))

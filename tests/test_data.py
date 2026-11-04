@@ -47,7 +47,10 @@ class TestCorruptRows:
     def test_surviving_rows_keep_their_text(self, shards_with_corrupt_row):
         examples = list(iter_examples(shards_with_corrupt_row, "train"))
         assert [e.translation for e in examples] == [
-            "sentence 0", "sentence 1", "sentence 3", "sentence 5"
+            "sentence 0",
+            "sentence 1",
+            "sentence 3",
+            "sentence 5",
         ]
 
     def test_raise_mode_fails_loudly(self, shards_with_corrupt_row):

@@ -18,8 +18,12 @@ def recordings(tmp_path):
         sf.write(tmp_path / "setA" / f"{index}.wav", audio, 48000)
 
     lines = [
-        {"audio": f"setA/{i}.wav", "set": "A" if i < 2 else "B",
-         "sentence": f"frase {i}", "translation": f"sentence {i}"}
+        {
+            "audio": f"setA/{i}.wav",
+            "set": "A" if i < 2 else "B",
+            "sentence": f"frase {i}",
+            "translation": f"sentence {i}",
+        }
         for i in range(3)
     ]
     manifest = tmp_path / "manifest.jsonl"
@@ -60,9 +64,7 @@ class TestLoadManifest:
             load_manifest(recordings)
 
     def test_blank_lines_are_ignored(self, recordings):
-        recordings.write_text(
-            json.dumps({"audio": "setA/0.wav", "translation": "x"}) + "\n\n\n"
-        )
+        recordings.write_text(json.dumps({"audio": "setA/0.wav", "translation": "x"}) + "\n\n\n")
         assert len(load_manifest(recordings)) == 1
 
     def test_an_empty_manifest_is_an_error(self, recordings):

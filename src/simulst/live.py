@@ -58,8 +58,9 @@ def stream_file(
 
         translator.push(chunk)
         elapsed = min((start + len(chunk)) / SAMPLE_RATE, total)
-        panel.update(f"audio {elapsed:4.1f}s / {total:.1f}s", translator.text,
-                     fraction=elapsed / total)
+        panel.update(
+            f"audio {elapsed:4.1f}s / {total:.1f}s", translator.text, fraction=elapsed / total
+        )
 
     translator.finish()
     panel.close(translator.text.strip(), offline)
@@ -111,8 +112,9 @@ def stream_microphone(
     print("\r\033[K", end="")
 
     quiet_for = 0.0
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, blocksize=block,
-                        callback=callback, latency="high"):
+    with sd.InputStream(
+        samplerate=SAMPLE_RATE, channels=1, blocksize=block, callback=callback, latency="high"
+    ):
         try:
             while True:
                 chunk = frames.get()
@@ -146,14 +148,21 @@ def main() -> None:
     parser.add_argument("--frame-threshold", type=int, default=16)
     parser.add_argument("--chunk-s", type=float, default=0.5)
     parser.add_argument("--min-audio-s", type=float, default=1.0)
-    parser.add_argument("--no-speech-threshold", type=float, default=0.5,
-                        help="drop a step above this no-speech probability; 1.0 disables")
+    parser.add_argument(
+        "--no-speech-threshold",
+        type=float,
+        default=0.5,
+        help="drop a step above this no-speech probability; 1.0 disables",
+    )
     parser.add_argument("--device", default=None)
     parser.add_argument("--no-realtime", action="store_true", help="replay as fast as possible")
-    parser.add_argument("--max-utterance-s", type=float, default=25.0,
-                        help="close an utterance here; Whisper's window is 30 s")
-    parser.add_argument("--silence-s", type=float, default=1.2,
-                        help="pause that ends an utterance")
+    parser.add_argument(
+        "--max-utterance-s",
+        type=float,
+        default=25.0,
+        help="close an utterance here; Whisper's window is 30 s",
+    )
+    parser.add_argument("--silence-s", type=float, default=1.2, help="pause that ends an utterance")
     parser.add_argument("--compare", action="store_true", help="also show the offline output")
     args = parser.parse_args()
 

@@ -25,7 +25,8 @@ from simulst.simultaneous import AlignAttConfig, SimultaneousTranslator
 
 def measure(model, processor, audio, chunk_s: float, frame_threshold: int) -> dict:
     translator = SimultaneousTranslator(
-        model, processor,
+        model,
+        processor,
         AlignAttConfig(frame_threshold=frame_threshold, chunk_s=chunk_s),
     )
     step = int(chunk_s * 16000)
@@ -85,8 +86,9 @@ def main() -> None:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"model": cfg.model.name, "device": args.device,
-                               "rows": rows}, indent=2))
+    out.write_text(
+        json.dumps({"model": cfg.model.name, "device": args.device, "rows": rows}, indent=2)
+    )
     print(f"\nwrote {out}")
 
 

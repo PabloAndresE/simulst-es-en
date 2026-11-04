@@ -18,9 +18,7 @@ def main() -> None:
     parser.add_argument("--dataset", default="fixie-ai/covost2")
     parser.add_argument("--config", default="es_en")
     parser.add_argument("--out", default="data")
-    parser.add_argument(
-        "--splits", nargs="*", default=["train", "validation", "test"]
-    )
+    parser.add_argument("--splits", nargs="*", default=["train", "validation", "test"])
     args = parser.parse_args()
 
     from huggingface_hub import snapshot_download
