@@ -23,5 +23,9 @@ jobs:
           pip install pytest ruff
           pip install --no-deps -e .
 
-      - run: ruff check src tests scripts
+      # Formatting was unchecked until an audit found 18 drifted files: a gate
+      # that is not in CI is not a gate. deploy/ is included because it was
+      # linted locally and never here.
+      - run: ruff format --check src tests scripts deploy
+      - run: ruff check src tests scripts deploy
       - run: pytest -q
